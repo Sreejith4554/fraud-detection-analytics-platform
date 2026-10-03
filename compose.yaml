@@ -10,7 +10,7 @@ x-app: &app
     - no-new-privileges:true
 services:
   db:
-    image: postgres:16-bookworm
+    image: postgres:16.15-bookworm@sha256:efedf3595f1d6f415c08568ba171029bf54052e754cc9f030e3f2412b21f3d67
     environment:
       POSTGRES_DB: fraud_demo
       POSTGRES_USER: fraud_owner

@@ -1,9 +1,9 @@
 {
   "status": "PASSED",
   "method": "actual Compose HTTP checks and db container restart",
-  "prediction_id": "b4fddf77-827d-4b39-a348-591c660cccd4",
-  "initial_count": 1,
-  "final_count": 2,
+  "prediction_id": "e17484bf-5dbf-4937-9592-890118416ad5",
+  "initial_count": 0,
+  "final_count": 1,
   "dashboard_health": 200,
   "data_volume_preserved": true,
   "limitations": "local synthetic request; ordinary restart only; no backup recovery test"

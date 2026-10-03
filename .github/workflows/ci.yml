@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 25
     services:
       postgres:
-        image: postgres:16-bookworm
+        image: postgres:16.15-bookworm@sha256:efedf3595f1d6f415c08568ba171029bf54052e754cc9f030e3f2412b21f3d67
         env:
           POSTGRES_USER: fraud_ci
           POSTGRES_PASSWORD: ephemeral-ci-only
