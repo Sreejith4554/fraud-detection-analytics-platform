@@ -142,6 +142,89 @@ with submit:
                 for k in ["model_score", "risk_category", "decision", "persisted", "alert_id"]
             }
         )
+    st.divider()
+    st.subheader("Alert-path stress test")
+    st.warning(
+        "Functional demonstration only. This uses an intentionally extreme "
+        "synthetic out-of-distribution vector to exercise the model threshold, "
+        "durable prediction, alert creation, and review-queue path. It is not "
+        "a realistic transaction and is not evidence of real-world fraud."
+    )
+    st.caption(
+        "The model and verified threshold are unchanged. The stress vector "
+        "follows the same deterministic mechanism exercised by the PostgreSQL "
+        "integration tests."
+    )
+
+    stress_vector = [
+        1000.0,
+        1000.0,
+        1000.0,
+        1000.0,
+        1000.0,
+        -1000.0,
+        -1000.0,
+        -1000.0,
+        -1000.0,
+        -1000.0,
+        1000.0,
+        -1000.0,
+        -1000.0,
+        -1000.0,
+        -1000.0,
+        -1000.0,
+        -1000.0,
+        -1000.0,
+        1000.0,
+        -1000.0,
+        1000.0,
+        1000.0,
+        1000.0,
+        -1000.0,
+        1000.0,
+        -1000.0,
+        -1000.0,
+        1000.0,
+    ]
+
+    if st.button("Run synthetic alert-path stress test"):
+        st.session_state.pop("last_stress_prediction", None)
+        try:
+            stress_payload = {
+                "schema_version": "1",
+                "source": "SYNTHETIC",
+                "amount": 12.5,
+                "time": 0.0,
+                "v": stress_vector,
+            }
+            st.session_state["last_stress_prediction"] = call(
+                "/predict", stress_payload
+            )
+            st.rerun()
+        except (ValueError, httpx.HTTPError):
+            st.error(
+                "Stress-test submission failed. No success is assumed; "
+                "check prediction history before retrying."
+            )
+
+    if "last_stress_prediction" in st.session_state:
+        stress_result = st.session_state["last_stress_prediction"]
+        st.success(
+            "Synthetic stress-test prediction saved "
+            + stress_result["prediction_id"]
+        )
+        st.json(
+            {
+                k: stress_result[k]
+                for k in [
+                    "model_score",
+                    "risk_category",
+                    "decision",
+                    "persisted",
+                    "alert_id",
+                ]
+            }
+        )
 with operations:
     st.subheader("Model provenance")
     st.json(model)
