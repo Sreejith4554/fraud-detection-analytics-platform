@@ -1,0 +1,95 @@
+{
+  "source_sha256": "76274b691b16a6c49d3f159c883398e03ccd6d1ee12d9d8ee38f4b4b98551a89",
+  "features": [
+    "Time",
+    "V1",
+    "V2",
+    "V3",
+    "V4",
+    "V5",
+    "V6",
+    "V7",
+    "V8",
+    "V9",
+    "V10",
+    "V11",
+    "V12",
+    "V13",
+    "V14",
+    "V15",
+    "V16",
+    "V17",
+    "V18",
+    "V19",
+    "V20",
+    "V21",
+    "V22",
+    "V23",
+    "V24",
+    "V25",
+    "V26",
+    "V27",
+    "V28",
+    "Amount"
+  ],
+  "source": {
+    "rows": 284807,
+    "fraud": 492,
+    "nonfraud": 284315,
+    "fraud_fraction": 0.001727485630620034,
+    "time_min": 0.0,
+    "time_max": 172792.0,
+    "amount_min": 0.0,
+    "amount_max": 25691.16
+  },
+  "missing_cells": 0,
+  "partition_method": "chronological 60/20/20; equal timestamps unsplit",
+  "exact_duplicate_rows_removed": 1081,
+  "non_time_repeat_rows_excluded": {
+    "train": 0,
+    "validation": 561,
+    "test": 1720
+  },
+  "time_boundaries": [
+    120393.0,
+    145234.0
+  ],
+  "partitions": {
+    "train": {
+      "rows": 170235,
+      "fraud": 342,
+      "nonfraud": 169893,
+      "fraud_fraction": 0.002008987575997885,
+      "time_min": 0.0,
+      "time_max": 120392.0,
+      "amount_min": 0.0,
+      "amount_max": 19656.53,
+      "sha256": "3070765ed61a68795b9502890f56e9cb7e152fc478a4ec1f61f2ef9a7dd4db0c",
+      "source_row_ids_sha256": "08309dd6a77b93b0bc3001e33d1b9f41828302c98eda0f3752a56a56fe7c597c"
+    },
+    "validation": {
+      "rows": 56184,
+      "fraud": 57,
+      "nonfraud": 56127,
+      "fraud_fraction": 0.001014523707817172,
+      "time_min": 120393.0,
+      "time_max": 145233.0,
+      "amount_min": 0.0,
+      "amount_max": 8360.0,
+      "sha256": "a93b7c182a7ce5336a1c6689f45aa6ac9ad7a8fcd0d6e3ca8d0a087f33e9492a",
+      "source_row_ids_sha256": "75ce62ccc36bd77acb5ad2af2ab8f9a9db3ea0742307f1553e0b915f4b9e0618"
+    },
+    "test": {
+      "rows": 55026,
+      "fraud": 74,
+      "nonfraud": 54952,
+      "fraud_fraction": 0.001344818812924799,
+      "time_min": 145234.0,
+      "time_max": 172792.0,
+      "amount_min": 0.0,
+      "amount_max": 25691.16,
+      "sha256": "a6db9820b46cd53daadcb057b214a32acab4cc67b1213b8e97511564de8f9ed3",
+      "source_row_ids_sha256": "fd697fd104610dbf5acf8798f1467b446e572f10084f5cfb9d12b4915eb835f1"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "scope": "local sequential HTTP SYNTHETIC score previews; zero database writes",
+  "requests_measured": 100,
+  "concurrency": 1,
+  "warmup_requests": 1,
+  "p50_ms": 2.06762950006123,
+  "p95_ms": 2.572204799707833,
+  "max_ms": 5.389386999922863,
+  "example_response": {
+    "model_score": 0.009240607812024676,
+    "risk_category": "LOW",
+    "decision": "NO_REVIEW_TRIGGERED",
+    "threshold": 0.9996296180470535,
+    "model_version": "ulb-v1",
+    "source": "SYNTHETIC",
+    "persisted": false,
+    "score_interpretation": "Uncalibrated model score; not an estimate of real-world fraud certainty.",
+    "disclaimer": "PORTFOLIO PROOF-OF-CONCEPT. Not for real financial decisions."
+  },
+  "python": "3.12.14",
+  "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+  "logical_cpu_count": 9,
+  "invalid_input_status": 422,
+  "durable_prediction_status": 503,
+  "readiness_status": 503,
+  "metrics": {
+    "scope": "process lifetime; resets on restart",
+    "requests": 105,
+    "errors": 3,
+    "score_requests": 101,
+    "mean_scoring_ms": 1.2541764554358938
+  }
+}

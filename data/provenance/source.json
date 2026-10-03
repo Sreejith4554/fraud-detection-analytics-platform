@@ -1,0 +1,15 @@
+{
+  "source": "https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud",
+  "owner": "Machine Learning Group - ULB",
+  "license": "Database: Open Database, Contents: Database Contents",
+  "requested_version": 3,
+  "download_endpoint": "https://www.kaggle.com/api/v1/datasets/download/mlg-ulb/creditcardfraud?datasetVersionNumber=3",
+  "retrieved_at": "2026-10-02T18:23:38.628944+00:00",
+  "filename": "creditcard.csv",
+  "bytes": 150828752,
+  "sha256": "76274b691b16a6c49d3f159c883398e03ccd6d1ee12d9d8ee38f4b4b98551a89",
+  "licence_urls": [
+    "https://opendatacommons.org/licenses/odbl/1-0/",
+    "https://opendatacommons.org/licenses/dbcl/1-0/"
+  ]
+}

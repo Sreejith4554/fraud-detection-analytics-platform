@@ -1,0 +1,13 @@
+{
+  "stage": "CI preparation",
+  "hosted_run": "NOT_RUN",
+  "new_gate_tests": 5,
+  "new_gate_tests_status": "PASSED",
+  "workflow_yaml_and_critical_controls": "PASSED",
+  "ruff": "PASSED",
+  "repository_path_and_size_checks": "PASSED",
+  "prior_full_suite_tests": 61,
+  "combined_66_test_run": "NOT_RUN",
+  "docker_local_gate": "PASSED_USER_REPORTED",
+  "original_compose_runtime_json_received": false
+}

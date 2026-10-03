@@ -1,0 +1,16 @@
+**
+!requirements.txt
+!api/
+!api/**
+!database/
+!database/**
+!dashboard/
+!dashboard/**
+!.streamlit/
+!.streamlit/config.toml
+!docs/
+!docs/evidence/
+!docs/evidence/model-selection.json
+!artifacts/
+!artifacts/model.joblib
+**/__pycache__/

@@ -1,0 +1,26 @@
+{
+  "compose_configuration": "PASSED",
+  "services": [
+    "api",
+    "dashboard",
+    "db",
+    "migrate"
+  ],
+  "host_ports_loopback_only": true,
+  "database_port_published": false,
+  "dashboard_has_database_secret": false,
+  "historical_environment_attempt": {
+    "docker_image_build": "BLOCKED",
+    "compose_execution": "BLOCKED",
+    "reason": "Docker daemon cannot initialize bridge network: iptables permission denied in managed environment",
+    "runtime_verification_script_executed": false
+  },
+  "current_gate": "PASSED_USER_REPORTED",
+  "verification_date": "2026-10-03",
+  "evidence_basis": "User supplied successful verifier output and final healthy docker compose ps states in conversation",
+  "original_runtime_file": "docs/evidence/compose-runtime.json on user machine",
+  "original_runtime_file_received_here": false,
+  "docker_image_build": "PASSED_USER_REPORTED",
+  "compose_execution": "PASSED_USER_REPORTED",
+  "runtime_verification_script_executed": "yes, on user machine; not repeated by assistant"
+}

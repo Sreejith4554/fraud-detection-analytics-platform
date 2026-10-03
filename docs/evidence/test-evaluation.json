@@ -1,0 +1,103 @@
+{
+  "selection_sha256": "b6a50d557a864f77f594dfe51bb997d2ecbbe8af32f2381fcbd0ab22d07b1e2f",
+  "model_sha256": "5f0b88e37f20c7fad6003ad0dc3111553bb1e4d1faf10b46baae6595f800eb98",
+  "model_version": "ulb-v1",
+  "threshold": 0.9996296180470535,
+  "test_rows": 55026,
+  "fraud_labels": 74,
+  "metrics": {
+    "precision": 0.7236842105263158,
+    "recall": 0.7432432432432432,
+    "f1": 0.7333333333333333,
+    "roc_auc": 0.9815219572462257,
+    "average_precision": 0.747563107277895,
+    "brier_score": 0.023960442652593165,
+    "tn": 54931,
+    "fp": 21,
+    "fn": 19,
+    "tp": 55,
+    "flagged_per_1000": 1.3811652673281722
+  },
+  "recall_wilson_95": [
+    0.6334555586947175,
+    0.8290229270043392
+  ],
+  "precision_wilson_95": [
+    0.6142463460107774,
+    0.8115975764600833
+  ],
+  "interval_caveat": "Binomial approximation; temporal dependence not modelled.",
+  "calibration_bins": [
+    {
+      "lower": 0.0,
+      "upper": 0.1,
+      "count": 44792,
+      "mean_score": 0.023137099096952874,
+      "observed_fraction": 6.69762457581711e-05
+    },
+    {
+      "lower": 0.1,
+      "upper": 0.2,
+      "count": 4530,
+      "mean_score": 0.14304409707441165,
+      "observed_fraction": 0.0004415011037527594
+    },
+    {
+      "lower": 0.2,
+      "upper": 0.30000000000000004,
+      "count": 2259,
+      "mean_score": 0.24505420626129523,
+      "observed_fraction": 0.0008853474988933156
+    },
+    {
+      "lower": 0.30000000000000004,
+      "upper": 0.4,
+      "count": 1189,
+      "mean_score": 0.34447847590581415,
+      "observed_fraction": 0.0008410428931875525
+    },
+    {
+      "lower": 0.4,
+      "upper": 0.5,
+      "count": 760,
+      "mean_score": 0.4450085819348233,
+      "observed_fraction": 0.0
+    },
+    {
+      "lower": 0.5,
+      "upper": 0.6000000000000001,
+      "count": 456,
+      "mean_score": 0.545290798729268,
+      "observed_fraction": 0.0021929824561403508
+    },
+    {
+      "lower": 0.6000000000000001,
+      "upper": 0.7000000000000001,
+      "count": 327,
+      "mean_score": 0.6480759011551286,
+      "observed_fraction": 0.0030581039755351682
+    },
+    {
+      "lower": 0.7000000000000001,
+      "upper": 0.8,
+      "count": 255,
+      "mean_score": 0.7478845614456422,
+      "observed_fraction": 0.00392156862745098
+    },
+    {
+      "lower": 0.8,
+      "upper": 0.9,
+      "count": 195,
+      "mean_score": 0.8481028922069805,
+      "observed_fraction": 0.0
+    },
+    {
+      "lower": 0.9,
+      "upper": 1.0,
+      "count": 263,
+      "mean_score": 0.9663894307063726,
+      "observed_fraction": 0.23954372623574144
+    }
+  ],
+  "threshold_changed": false
+}

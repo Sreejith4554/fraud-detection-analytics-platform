@@ -1,0 +1,18 @@
+{
+  "api_ready_status": 200,
+  "streamlit_health_status": 200,
+  "streamlit_root_status": 200,
+  "title": "Fraud Detection & Analytics",
+  "metrics": {
+    "Transactions processed": "100",
+    "Flagged for review": "1",
+    "Flagged share": "1.00%",
+    "Stored alerts": "1"
+  },
+  "api_total": 100,
+  "api_alerts": 1,
+  "app_exceptions": 0,
+  "backend": "real HTTP API and PostgreSQL",
+  "visual_screenshot_review": false,
+  "test_type": "AppTest functional widget verification, not browser pixels"
+}

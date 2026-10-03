@@ -1,0 +1,8 @@
+{
+  "retrained_validation_max_probability_difference": 0.0,
+  "scaler_matches_training_only_means": true,
+  "validation_rows_compared": 56184,
+  "artifact_hash_verified": true,
+  "test_partition_read": false,
+  "missing_artifact_restored_to_exact_frozen_sha256": true
+}

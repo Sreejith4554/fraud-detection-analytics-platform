@@ -1,0 +1,7 @@
+{
+  "full_dataset_second_run_identical": true,
+  "cross_partition_non_time_signature_overlap": 0,
+  "chronology_verified": true,
+  "training_eda_only": true,
+  "total_retained_rows": 281445
+}

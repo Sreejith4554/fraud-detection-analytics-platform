@@ -1,0 +1,361 @@
+{
+  "model_version": "ulb-v1",
+  "selected_model": "logistic_balanced",
+  "selection_rule": "validation AP descending; cost20 ascending; name ascending",
+  "schema_version": "1",
+  "features": [
+    "Time",
+    "V1",
+    "V2",
+    "V3",
+    "V4",
+    "V5",
+    "V6",
+    "V7",
+    "V8",
+    "V9",
+    "V10",
+    "V11",
+    "V12",
+    "V13",
+    "V14",
+    "V15",
+    "V16",
+    "V17",
+    "V18",
+    "V19",
+    "V20",
+    "V21",
+    "V22",
+    "V23",
+    "V24",
+    "V25",
+    "V26",
+    "V27",
+    "V28",
+    "Amount"
+  ],
+  "threshold": 0.9996296180470535,
+  "threshold_cost_status": "SIMULATED FN=20 FP=1",
+  "model_sha256": "5f0b88e37f20c7fad6003ad0dc3111553bb1e4d1faf10b46baae6595f800eb98",
+  "seed": 42,
+  "python": "3.12.14",
+  "sklearn": "1.9.1",
+  "data_report_sha256": "652b9c976e811d6d63831f2cce983b544a3624b2e2fb645113be138dbad4d88f",
+  "reload_max_probability_difference": 0.0,
+  "test_evaluation_status": "NOT_OPENED",
+  "validation_results": {
+    "dummy": {
+      "fit_and_validation_seconds": 0.037390692999906605,
+      "at_0_5": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "roc_auc": 0.5,
+        "average_precision": 0.001014523707817172,
+        "brier_score": 0.0010144834078485664,
+        "tn": 56127,
+        "fp": 0,
+        "fn": 57,
+        "tp": 0,
+        "flagged_per_1000": 0.0
+      },
+      "cost_sensitivity": {
+        "5": {
+          "threshold": 1.0000000000000002,
+          "cost": 285.0,
+          "fn_cost": 5,
+          "fp_cost": 1,
+          "cost_status": "SIMULATED",
+          "metrics": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "roc_auc": 0.5,
+            "average_precision": 0.001014523707817172,
+            "brier_score": 0.0010144834078485664,
+            "tn": 56127,
+            "fp": 0,
+            "fn": 57,
+            "tp": 0,
+            "flagged_per_1000": 0.0
+          }
+        },
+        "20": {
+          "threshold": 1.0000000000000002,
+          "cost": 1140.0,
+          "fn_cost": 20,
+          "fp_cost": 1,
+          "cost_status": "SIMULATED",
+          "metrics": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "roc_auc": 0.5,
+            "average_precision": 0.001014523707817172,
+            "brier_score": 0.0010144834078485664,
+            "tn": 56127,
+            "fp": 0,
+            "fn": 57,
+            "tp": 0,
+            "flagged_per_1000": 0.0
+          }
+        },
+        "100": {
+          "threshold": 1.0000000000000002,
+          "cost": 5700.0,
+          "fn_cost": 100,
+          "fp_cost": 1,
+          "cost_status": "SIMULATED",
+          "metrics": {
+            "precision": 0.0,
+            "recall": 0.0,
+            "f1": 0.0,
+            "roc_auc": 0.5,
+            "average_precision": 0.001014523707817172,
+            "brier_score": 0.0010144834078485664,
+            "tn": 56127,
+            "fp": 0,
+            "fn": 57,
+            "tp": 0,
+            "flagged_per_1000": 0.0
+          }
+        }
+      }
+    },
+    "logistic": {
+      "fit_and_validation_seconds": 0.20995728999992025,
+      "at_0_5": {
+        "precision": 0.627906976744186,
+        "recall": 0.47368421052631576,
+        "f1": 0.54,
+        "roc_auc": 0.9679226841133157,
+        "average_precision": 0.6424358379066718,
+        "brier_score": 0.0005595242053105154,
+        "tn": 56111,
+        "fp": 16,
+        "fn": 30,
+        "tp": 27,
+        "flagged_per_1000": 0.7653424462480422
+      },
+      "cost_sensitivity": {
+        "5": {
+          "threshold": 0.13556663350015768,
+          "cost": 100.0,
+          "fn_cost": 5,
+          "fp_cost": 1,
+          "cost_status": "SIMULATED",
+          "metrics": {
+            "precision": 0.6268656716417911,
+            "recall": 0.7368421052631579,
+            "f1": 0.6774193548387096,
+            "roc_auc": 0.9679226841133157,
+            "average_precision": 0.6424358379066718,
+            "brier_score": 0.0005595242053105154,
+            "tn": 56102,
+            "fp": 25,
+            "fn": 15,
+            "tp": 42,
+            "flagged_per_1000": 1.1925103232236935
+          }
+        },
+        "20": {
+          "threshold": 0.05277928177131472,
+          "cost": 283.0,
+          "fn_cost": 20,
+          "fp_cost": 1,
+          "cost_status": "SIMULATED",
+          "metrics": {
+            "precision": 0.42201834862385323,
+            "recall": 0.8070175438596491,
+            "f1": 0.5542168674698795,
+            "roc_auc": 0.9679226841133157,
+            "average_precision": 0.6424358379066718,
+            "brier_score": 0.0005595242053105154,
+            "tn": 56064,
+            "fp": 63,
+            "fn": 11,
+            "tp": 46,
+            "flagged_per_1000": 1.9400541079310836
+          }
+        },
+        "100": {
+          "threshold": 0.05277928177131472,
+          "cost": 1163.0,
+          "fn_cost": 100,
+          "fp_cost": 1,
+          "cost_status": "SIMULATED",
+          "metrics": {
+            "precision": 0.42201834862385323,
+            "recall": 0.8070175438596491,
+            "f1": 0.5542168674698795,
+            "roc_auc": 0.9679226841133157,
+            "average_precision": 0.6424358379066718,
+            "brier_score": 0.0005595242053105154,
+            "tn": 56064,
+            "fp": 63,
+            "fn": 11,
+            "tp": 46,
+            "flagged_per_1000": 1.9400541079310836
+          }
+        }
+      }
+    },
+    "logistic_balanced": {
+      "fit_and_validation_seconds": 0.41744079699992653,
+      "at_0_5": {
+        "precision": 0.025835866261398176,
+        "recall": 0.8947368421052632,
+        "f1": 0.050221565731166914,
+        "roc_auc": 0.970776487783501,
+        "average_precision": 0.7726899712882889,
+        "brier_score": 0.029798724711042092,
+        "tn": 54204,
+        "fp": 1923,
+        "fn": 6,
+        "tp": 51,
+        "flagged_per_1000": 35.13455788124733
+      },
+      "cost_sensitivity": {
+        "5": {
+          "threshold": 0.9999848664958443,
+          "cost": 85.0,
+          "fn_cost": 5,
+          "fp_cost": 1,
+          "cost_status": "SIMULATED",
+          "metrics": {
+            "precision": 0.8913043478260869,
+            "recall": 0.7192982456140351,
+            "f1": 0.7961165048543689,
+            "roc_auc": 0.970776487783501,
+            "average_precision": 0.7726899712882889,
+            "brier_score": 0.029798724711042092,
+            "tn": 56122,
+            "fp": 5,
+            "fn": 16,
+            "tp": 41,
+            "flagged_per_1000": 0.8187384308699986
+          }
+        },
+        "20": {
+          "threshold": 0.9996296180470535,
+          "cost": 285.0,
+          "fn_cost": 20,
+          "fp_cost": 1,
+          "cost_status": "SIMULATED",
+          "metrics": {
+            "precision": 0.6376811594202898,
+            "recall": 0.7719298245614035,
+            "f1": 0.6984126984126984,
+            "roc_auc": 0.970776487783501,
+            "average_precision": 0.7726899712882889,
+            "brier_score": 0.029798724711042092,
+            "tn": 56102,
+            "fp": 25,
+            "fn": 13,
+            "tp": 44,
+            "flagged_per_1000": 1.2281076463049978
+          }
+        },
+        "100": {
+          "threshold": 0.8907583217244314,
+          "cost": 1087.0,
+          "fn_cost": 100,
+          "fp_cost": 1,
+          "cost_status": "SIMULATED",
+          "metrics": {
+            "precision": 0.14583333333333334,
+            "recall": 0.8596491228070176,
+            "f1": 0.24936386768447838,
+            "roc_auc": 0.970776487783501,
+            "average_precision": 0.7726899712882889,
+            "brier_score": 0.029798724711042092,
+            "tn": 55840,
+            "fp": 287,
+            "fn": 8,
+            "tp": 49,
+            "flagged_per_1000": 5.98035027765912
+          }
+        }
+      }
+    },
+    "random_forest": {
+      "fit_and_validation_seconds": 33.26390449099995,
+      "at_0_5": {
+        "precision": 0.9736842105263158,
+        "recall": 0.6491228070175439,
+        "f1": 0.7789473684210526,
+        "roc_auc": 0.9476172302225622,
+        "average_precision": 0.7661486928975936,
+        "brier_score": 0.0004165862156759035,
+        "tn": 56126,
+        "fp": 1,
+        "fn": 20,
+        "tp": 37,
+        "flagged_per_1000": 0.6763491385447815
+      },
+      "cost_sensitivity": {
+        "5": {
+          "threshold": 0.2892374745635876,
+          "cost": 72.0,
+          "fn_cost": 5,
+          "fp_cost": 1,
+          "cost_status": "SIMULATED",
+          "metrics": {
+            "precision": 0.9555555555555556,
+            "recall": 0.7543859649122807,
+            "f1": 0.8431372549019608,
+            "roc_auc": 0.9476172302225622,
+            "average_precision": 0.7661486928975936,
+            "brier_score": 0.0004165862156759035,
+            "tn": 56125,
+            "fp": 2,
+            "fn": 14,
+            "tp": 43,
+            "flagged_per_1000": 0.8009397693293464
+          }
+        },
+        "20": {
+          "threshold": 0.2892374745635876,
+          "cost": 282.0,
+          "fn_cost": 20,
+          "fp_cost": 1,
+          "cost_status": "SIMULATED",
+          "metrics": {
+            "precision": 0.9555555555555556,
+            "recall": 0.7543859649122807,
+            "f1": 0.8431372549019608,
+            "roc_auc": 0.9476172302225622,
+            "average_precision": 0.7661486928975936,
+            "brier_score": 0.0004165862156759035,
+            "tn": 56125,
+            "fp": 2,
+            "fn": 14,
+            "tp": 43,
+            "flagged_per_1000": 0.8009397693293464
+          }
+        },
+        "100": {
+          "threshold": 0.049952468104484705,
+          "cost": 1161.0,
+          "fn_cost": 100,
+          "fp_cost": 1,
+          "cost_status": "SIMULATED",
+          "metrics": {
+            "precision": 0.22596153846153846,
+            "recall": 0.8245614035087719,
+            "f1": 0.35471698113207545,
+            "roc_auc": 0.9476172302225622,
+            "average_precision": 0.7661486928975936,
+            "brier_score": 0.0004165862156759035,
+            "tn": 55966,
+            "fp": 161,
+            "fn": 10,
+            "tp": 47,
+            "flagged_per_1000": 3.7021216004556456
+          }
+        }
+      }
+    }
+  }
+}

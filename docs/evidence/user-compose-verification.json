@@ -1,0 +1,22 @@
+{
+  "classification": "USER-REPORTED ACTUAL LOCAL EXECUTION; not simulated",
+  "reported_on": "2026-10-03",
+  "command": "python scripts/verify_compose.py",
+  "reported_output": "Compose runtime checks PASSED; evidence written to docs/evidence/compose-runtime.json",
+  "reported_services": {
+    "api": "healthy; 127.0.0.1:8000->8000/tcp",
+    "dashboard": "healthy; 127.0.0.1:8501->8501/tcp",
+    "db": "healthy",
+    "migration": "PostgreSQL schema revision 1 installed/verified"
+  },
+  "postgres_restart_check": "passed per user report",
+  "original_json_received": false,
+  "incident": [
+    "Host port 8000 conflict",
+    "API container running but /ready returned 503",
+    "API missing from Compose network; db hostname did not resolve",
+    "Broken API container removed and recreated",
+    "Recreated API joined network; API/dashboard healthy; verifier passed"
+  ],
+  "limitation": "Exact prediction ID, counts, timestamps and local image digests have not been received; none are invented."
+}
