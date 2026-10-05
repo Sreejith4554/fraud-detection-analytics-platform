@@ -1,5 +1,5 @@
 # Phase 10 — automated release gates
-**Workflow implemented and statically checked. Hosted GitHub Actions execution PENDING.**
+**Historical milestone snapshot. The workflow described below was initially prepared and statically checked at this phase. It has since been executed successfully in hosted GitHub Actions, including the integration and Docker Compose verification gates. See [release readiness](release-readiness.md) for the authoritative current status.**
 
 ## Pipeline
 Integration job: checkout → Python 3.12.14 → pinned dependencies → repository hygiene/YAML checks → lint → verified public dataset → chronological partitions → restore frozen model → full tests with zero skips → upload model and test report.

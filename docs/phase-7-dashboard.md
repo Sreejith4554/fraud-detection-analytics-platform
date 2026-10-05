@@ -1,6 +1,6 @@
 # Phase 7 — product analytics and alert views
 
-Historical milestone snapshot. Current status: local Compose verification PASSED per user execution report; hosted CI/deployment pending. See [release readiness](release-readiness.md) for superseding gate status.
+Historical milestone snapshot. The statements below preserve the project state at this phase and are not the current release status. The completed proof-of-concept now has verified local Docker Compose execution, passing hosted GitHub integration and container gates, CodeQL analysis, and browser demonstration evidence. See [release readiness](release-readiness.md) for the authoritative current status.
 
 **TESTED functional dashboard, backed by the real API and PostgreSQL. Local-only.**
 

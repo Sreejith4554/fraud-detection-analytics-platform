@@ -1,7 +1,7 @@
 # Phases 8–9 checkpoint — test regression and container preparation
 **Container runtime gate PASSED on the user’s local machine, as reported on 3 October 2026.**
 
-The user supplied the exact verifier success message, successful migration, final healthy services and recovery details. The original docs/evidence/compose-runtime.json has not been received here; see user-compose-verification.json and incident-compose-network.md. No rerun is requested. Earlier managed-runtime failures below are historical.
+The local Compose runtime was subsequently verified successfully, and runtime evidence is now retained under docs/evidence. Earlier managed-runtime failures below are preserved as historical troubleshooting evidence. See [release readiness](release-readiness.md) for the authoritative current status.
 
 ## What is implemented
 Dockerfile: Python 3.12 slim Debian base; pinned Python dependencies; trusted model and manifest included; non-root application user. One shared image serves API, dashboard and an explicit one-shot schema installer. This avoids separate image maintenance for a small Python POC, at the cost of a larger shared image containing both UI and backend dependencies.
