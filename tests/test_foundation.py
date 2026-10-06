@@ -14,7 +14,7 @@ def payload():
 def test_liveness_does_not_claim_readiness():
     response = client.get('/health')
     assert response.status_code == 200
-    assert response.json()['release'] == '1.1.0-dev'
+    assert response.json()['release'] == '1.1.0'
     assert response.json()['readiness_endpoint'] == '/ready'
     assert client.get('/ready').status_code == 503
 
@@ -60,6 +60,6 @@ def test_nonfinite_values_rejected_by_schema():
 
 def test_openapi_exposes_contract():
     spec = client.get('/openapi.json').json()
-    assert spec['info']['version'] == '1.1.0-dev'
+    assert spec['info']['version'] == '1.1.0'
     assert '/predict' in spec['paths']
     assert spec['components']['schemas']['TransactionInput']['additionalProperties'] is False
