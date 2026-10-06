@@ -1,3 +1,3 @@
 """Supported PostgreSQL schema version."""
 
-LATEST_SCHEMA_REVISION = 2
+LATEST_SCHEMA_REVISION = 3

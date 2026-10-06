@@ -13,6 +13,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    Text,
     create_engine,
     func,
     insert,
@@ -83,6 +84,50 @@ alerts = Table(
 )
 
 
+investigations = Table(
+    "investigations",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True),
+    Column(
+        "alert_id",
+        UUID(as_uuid=True),
+        ForeignKey("alerts.id"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("status", String(20), nullable=False),
+    Column("disposition", String(30), nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("closed_at", DateTime(timezone=True), nullable=True),
+    CheckConstraint("status IN ('IN_PROGRESS','CLOSED')"),
+    CheckConstraint(
+        "disposition IS NULL OR "
+        "disposition IN ('CONFIRMED_FRAUD','FALSE_POSITIVE','INCONCLUSIVE')"
+    ),
+    CheckConstraint(
+        "(status='IN_PROGRESS' AND disposition IS NULL AND closed_at IS NULL) OR "
+        "(status='CLOSED' AND disposition IS NOT NULL AND closed_at IS NOT NULL)"
+    ),
+)
+
+investigation_notes = Table(
+    "investigation_notes",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True),
+    Column(
+        "investigation_id",
+        UUID(as_uuid=True),
+        ForeignKey("investigations.id"),
+        nullable=False,
+        index=True,
+    ),
+    Column("body", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    CheckConstraint("length(btrim(body)) > 0"),
+)
+
+
 def connect(url):
     engine = create_engine(
         url,
@@ -112,7 +157,7 @@ def verify_schema(engine):
         if conn.execute(select(revision.c.version)).scalars().all() != [LATEST_SCHEMA_REVISION]:
             raise ValueError("Schema not installed or incompatible")
         # Compile and execute zero-row selects to verify required table columns.
-        for table in [transactions, predictions, alerts]:
+        for table in [transactions, predictions, alerts, investigations, investigation_notes]:
             conn.execute(select(table).limit(0))
 
 
