@@ -18,7 +18,6 @@ from database.store import (
     connect,
     install,
     predictions,
-    revision,
     transactions,
     verify_schema,
 )
