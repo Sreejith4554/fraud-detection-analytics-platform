@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from api.schemas import PredictionResponse, ScoreResponse, TransactionInput
 from api.services.inference import InferenceService
 from database.config import database_url as configured_database_url
+from database.schema_version import LATEST_SCHEMA_REVISION
 from database.store import Store
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -134,7 +135,7 @@ def create_app(artifact=None, manifest=None, database_url=None):
     async def ready():
         inference()
         database()
-        return {"scoring_ready": True, "prediction_ready": True, "schema_revision": 1}
+        return {"scoring_ready": True, "prediction_ready": True, "schema_revision": LATEST_SCHEMA_REVISION}
 
     @app.get("/model-info")
     async def model_info():

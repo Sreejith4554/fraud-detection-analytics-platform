@@ -112,13 +112,13 @@ def test_database_unavailable_returns_no_success():
 
 def test_schema_revision_gate(store):
     with store.engine.begin() as conn:
-        conn.execute(text("UPDATE schema_revision SET version=2"))
+        conn.execute(text("UPDATE schema_revision SET version=3"))
     try:
         with TestClient(create_app(database_url=URL)) as client:
             assert client.get("/ready").status_code == 503
     finally:
         with store.engine.begin() as conn:
-            conn.execute(text("UPDATE schema_revision SET version=1"))
+            conn.execute(text("UPDATE schema_revision SET version=2"))
 
 
 def test_analytics_empty_database(store):
@@ -146,6 +146,8 @@ def test_global_analytics_exceeds_history_page_and_alert_join(store):
         assert result["sources"] == {"SYNTHETIC": 22}
         alert = client.get("/alerts").json()["items"][0]
         assert alert["id"] == high["alert_id"] and alert["prediction_id"] == high["prediction_id"]
+        assert alert["updated_at"] == alert["created_at"]
+        assert alert["resolved_at"] is None
         assert client.get("/alerts?limit=101").status_code == 422
         assert client.get("/alerts?offset=-1").status_code == 422
 

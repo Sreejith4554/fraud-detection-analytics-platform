@@ -32,7 +32,8 @@ def test_real_score_matches_direct_model_and_not_persisted():
     data = payload()
     frame = pd.DataFrame([[data["time"], *data["v"], data["amount"]]], columns=FEATURES)
     expected = float(joblib.load(ARTIFACT).predict_proba(frame)[0, 1])
-    with TestClient(create_app()) as client:
+    # Explicit scoring-only mode; do not inherit a Compose database configuration.
+    with TestClient(create_app(database_url="")) as client:
         result = client.post("/score", json=data)
         assert result.status_code == 200
         assert result.json()["model_score"] == expected
