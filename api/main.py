@@ -19,6 +19,7 @@ from database.schema_version import LATEST_SCHEMA_REVISION
 from database.store import Store
 
 ROOT = Path(__file__).resolve().parents[1]
+APP_VERSION = "1.1.0-dev"
 DISCLAIMER = "PORTFOLIO PROOF-OF-CONCEPT. Not for real financial decisions."
 SCORE_NOTE = "Uncalibrated model score; not an estimate of real-world fraud certainty."
 logger = logging.getLogger("fraud_api")
@@ -56,7 +57,7 @@ def create_app(artifact=None, manifest=None, database_url=None):
 
     app = FastAPI(
         title="Fraud Detection & Analytics Delivery Platform",
-        version="0.7.0",
+        version=APP_VERSION,
         description=DISCLAIMER,
         lifespan=lifespan,
     )
@@ -115,7 +116,7 @@ def create_app(artifact=None, manifest=None, database_url=None):
     async def health():
         return {
             "status": "alive",
-            "release": "0.7.0",
+            "release": APP_VERSION,
             "scoring_ready": app.state.inference is not None,
             "readiness_endpoint": "/ready",
         }
