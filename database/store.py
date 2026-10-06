@@ -302,6 +302,18 @@ class Store:
                 return None
 
             if row["status"] == "OPEN":
+                active_investigation = conn.execute(
+                    select(investigations.c.id).where(
+                        investigations.c.alert_id == alert_id,
+                        investigations.c.status == "IN_PROGRESS",
+                    )
+                ).scalar_one_or_none()
+
+                if active_investigation is not None:
+                    raise ValueError(
+                        "Cannot resolve alert with active investigation"
+                    )
+
                 row = (
                     conn.execute(
                         update(alerts)
@@ -325,6 +337,207 @@ class Store:
             for key in ["created_at", "updated_at", "resolved_at"]:
                 item[key] = item[key].isoformat() if item[key] is not None else None
             return item
+
+    @staticmethod
+    def _serialize_investigation(row):
+        item = dict(row)
+        for key in ["id", "alert_id"]:
+            item[key] = str(item[key])
+        for key in ["created_at", "updated_at", "closed_at"]:
+            item[key] = item[key].isoformat() if item[key] is not None else None
+        return item
+
+    @staticmethod
+    def _serialize_investigation_note(row):
+        item = dict(row)
+        for key in ["id", "investigation_id"]:
+            item[key] = str(item[key])
+        item["created_at"] = item["created_at"].isoformat()
+        return item
+
+    def start_investigation(self, alert_id):
+        """Start one investigation for an open alert; repeated start is idempotent."""
+        now = datetime.now(timezone.utc)
+
+        with self.engine.begin() as conn:
+            alert = (
+                conn.execute(
+                    select(alerts)
+                    .where(alerts.c.id == alert_id)
+                    .with_for_update()
+                )
+                .mappings()
+                .one_or_none()
+            )
+
+            if alert is None:
+                return None
+
+            existing = (
+                conn.execute(
+                    select(investigations).where(
+                        investigations.c.alert_id == alert_id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if existing is not None:
+                return self._serialize_investigation(existing)
+
+            if alert["status"] == "RESOLVED":
+                raise ValueError("Cannot start investigation for resolved alert")
+            if alert["status"] != "OPEN":
+                raise ValueError(f"Unsupported alert status: {alert['status']}")
+
+            row = (
+                conn.execute(
+                    insert(investigations)
+                    .values(
+                        id=uuid4(),
+                        alert_id=alert["id"],
+                        status="IN_PROGRESS",
+                        disposition=None,
+                        created_at=now,
+                        updated_at=now,
+                        closed_at=None,
+                    )
+                    .returning(investigations)
+                )
+                .mappings()
+                .one()
+            )
+
+            return self._serialize_investigation(row)
+
+    def add_investigation_note(self, investigation_id, body):
+        """Append a note to an in-progress investigation."""
+        body = body.strip()
+        if not body:
+            raise ValueError("Investigation note cannot be blank")
+
+        now = datetime.now(timezone.utc)
+
+        with self.engine.begin() as conn:
+            investigation = (
+                conn.execute(
+                    select(investigations)
+                    .where(investigations.c.id == investigation_id)
+                    .with_for_update()
+                )
+                .mappings()
+                .one_or_none()
+            )
+
+            if investigation is None:
+                return None
+            if investigation["status"] == "CLOSED":
+                raise ValueError("Cannot add note to closed investigation")
+            if investigation["status"] != "IN_PROGRESS":
+                raise ValueError(
+                    f"Unsupported investigation status: {investigation['status']}"
+                )
+
+            row = (
+                conn.execute(
+                    insert(investigation_notes)
+                    .values(
+                        id=uuid4(),
+                        investigation_id=investigation["id"],
+                        body=body,
+                        created_at=now,
+                    )
+                    .returning(investigation_notes)
+                )
+                .mappings()
+                .one()
+            )
+
+            return self._serialize_investigation_note(row)
+
+    def close_investigation(self, investigation_id, disposition):
+        """Close an investigation and resolve its alert atomically."""
+        allowed_dispositions = {
+            "CONFIRMED_FRAUD",
+            "FALSE_POSITIVE",
+            "INCONCLUSIVE",
+        }
+        if disposition not in allowed_dispositions:
+            raise ValueError(
+                f"Unsupported investigation disposition: {disposition}"
+            )
+
+        now = datetime.now(timezone.utc)
+
+        with self.engine.begin() as conn:
+            investigation = (
+                conn.execute(
+                    select(investigations)
+                    .where(investigations.c.id == investigation_id)
+                    .with_for_update()
+                )
+                .mappings()
+                .one_or_none()
+            )
+
+            if investigation is None:
+                return None
+
+            if investigation["status"] == "CLOSED":
+                if investigation["disposition"] != disposition:
+                    raise ValueError(
+                        "Investigation already closed with different disposition"
+                    )
+                return self._serialize_investigation(investigation)
+
+            if investigation["status"] != "IN_PROGRESS":
+                raise ValueError(
+                    f"Unsupported investigation status: {investigation['status']}"
+                )
+
+            alert = (
+                conn.execute(
+                    select(alerts)
+                    .where(alerts.c.id == investigation["alert_id"])
+                    .with_for_update()
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if alert is None:
+                raise ValueError("Investigation references missing alert")
+            if alert["status"] != "OPEN":
+                raise ValueError(
+                    f"Cannot close investigation for alert status: {alert['status']}"
+                )
+
+            row = (
+                conn.execute(
+                    update(investigations)
+                    .where(investigations.c.id == investigation_id)
+                    .values(
+                        status="CLOSED",
+                        disposition=disposition,
+                        updated_at=now,
+                        closed_at=now,
+                    )
+                    .returning(investigations)
+                )
+                .mappings()
+                .one()
+            )
+
+            conn.execute(
+                update(alerts)
+                .where(alerts.c.id == investigation["alert_id"])
+                .values(
+                    status="RESOLVED",
+                    updated_at=now,
+                    resolved_at=now,
+                )
+            )
+
+            return self._serialize_investigation(row)
 
     def alert_history(self, limit, offset, status=None):
         count_query = select(func.count()).select_from(alerts)

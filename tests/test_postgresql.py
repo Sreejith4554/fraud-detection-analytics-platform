@@ -9,7 +9,14 @@ from sqlalchemy import event, func, select, text
 from sqlalchemy.engine import make_url
 
 from api.main import ROOT, create_app
-from database.store import Store, alerts, install, predictions, transactions
+from database.store import (
+    Store,
+    alerts,
+    install,
+    investigations,
+    predictions,
+    transactions,
+)
 
 URL = os.getenv("FRAUD_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="Dedicated PostgreSQL test database required")
@@ -21,7 +28,7 @@ def store():
     service = Store(URL)
     install(service.engine)
     with service.engine.begin() as conn:
-        conn.execute(text("TRUNCATE alerts, predictions, transactions"))
+        conn.execute(text("TRUNCATE investigation_notes, investigations, alerts, predictions, transactions"))
     yield service
     service.engine.dispose()
 
@@ -112,13 +119,13 @@ def test_database_unavailable_returns_no_success():
 
 def test_schema_revision_gate(store):
     with store.engine.begin() as conn:
-        conn.execute(text("UPDATE schema_revision SET version=3"))
+        conn.execute(text("UPDATE schema_revision SET version=4"))
     try:
         with TestClient(create_app(database_url=URL)) as client:
             assert client.get("/ready").status_code == 503
     finally:
         with store.engine.begin() as conn:
-            conn.execute(text("UPDATE schema_revision SET version=2"))
+            conn.execute(text("UPDATE schema_revision SET version=3"))
 
 
 def test_analytics_empty_database(store):
@@ -398,3 +405,142 @@ def test_streamlit_review_queue_resolves_alert_through_http(store, monkeypatch):
     finally:
         process.terminate()
         process.wait(timeout=10)
+
+def test_investigation_lifecycle_is_atomic_and_idempotent(store):
+    app = create_app(database_url=URL)
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+
+    alert_id = created["alert_id"]
+
+    investigation = store.start_investigation(alert_id)
+    assert investigation is not None
+    assert investigation["alert_id"] == alert_id
+    assert investigation["status"] == "IN_PROGRESS"
+    assert investigation["disposition"] is None
+    assert investigation["closed_at"] is None
+    assert investigation["created_at"] == investigation["updated_at"]
+
+    investigation_id = investigation["id"]
+    created_at = investigation["created_at"]
+
+    repeated = store.start_investigation(alert_id)
+    assert repeated["id"] == investigation_id
+    assert repeated["created_at"] == created_at
+    assert repeated["status"] == "IN_PROGRESS"
+
+    note = store.add_investigation_note(
+        investigation_id,
+        "Reviewed transaction context and model evidence.",
+    )
+    assert note is not None
+    assert note["investigation_id"] == investigation_id
+    assert note["body"] == "Reviewed transaction context and model evidence."
+    assert note["created_at"] is not None
+
+    closed = store.close_investigation(investigation_id, "FALSE_POSITIVE")
+    assert closed is not None
+    assert closed["id"] == investigation_id
+    assert closed["status"] == "CLOSED"
+    assert closed["disposition"] == "FALSE_POSITIVE"
+    assert closed["closed_at"] is not None
+    assert closed["updated_at"] == closed["closed_at"]
+
+    with store.engine.connect() as conn:
+        alert = conn.execute(
+            select(
+                alerts.c.status,
+                alerts.c.updated_at,
+                alerts.c.resolved_at,
+            ).where(alerts.c.id == alert_id)
+        ).one()
+
+    assert alert.status == "RESOLVED"
+    assert alert.resolved_at.isoformat() == closed["closed_at"]
+    assert alert.updated_at.isoformat() == closed["closed_at"]
+
+    first_closed_at = closed["closed_at"]
+    repeated_close = store.close_investigation(
+        investigation_id,
+        "FALSE_POSITIVE",
+    )
+    assert repeated_close["closed_at"] == first_closed_at
+    assert repeated_close["updated_at"] == first_closed_at
+    assert repeated_close["disposition"] == "FALSE_POSITIVE"
+
+    with pytest.raises(ValueError, match="different disposition"):
+        store.close_investigation(investigation_id, "INCONCLUSIVE")
+
+    with pytest.raises(ValueError, match="closed investigation"):
+        store.add_investigation_note(investigation_id, "Too late")
+
+    assert (
+        store.start_investigation("00000000-0000-0000-0000-000000000000")
+        is None
+    )
+    assert (
+        store.add_investigation_note(
+            "00000000-0000-0000-0000-000000000000",
+            "Missing investigation",
+        )
+        is None
+    )
+    assert (
+        store.close_investigation(
+            "00000000-0000-0000-0000-000000000000",
+            "INCONCLUSIVE",
+        )
+        is None
+    )
+
+
+def test_investigation_rejects_resolved_alert_and_invalid_input(store):
+    app = create_app(database_url=URL)
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+
+    alert_id = created["alert_id"]
+    assert store.resolve_alert(alert_id)["status"] == "RESOLVED"
+
+    with pytest.raises(ValueError, match="resolved alert"):
+        store.start_investigation(alert_id)
+
+    app = create_app(database_url=URL)
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+
+    investigation = store.start_investigation(created["alert_id"])
+
+    with pytest.raises(ValueError, match="blank"):
+        store.add_investigation_note(investigation["id"], "   ")
+
+    with pytest.raises(ValueError, match="Unsupported investigation disposition"):
+        store.close_investigation(investigation["id"], "MODEL_SAYS_FRAUD")
+
+
+def test_active_investigation_prevents_direct_alert_resolution(store):
+    app = create_app(database_url=URL)
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+
+    alert_id = created["alert_id"]
+    investigation = store.start_investigation(alert_id)
+
+    assert investigation["status"] == "IN_PROGRESS"
+
+    with pytest.raises(ValueError, match="active investigation"):
+        store.resolve_alert(alert_id)
+
+    with store.engine.connect() as conn:
+        alert_status = conn.execute(
+            select(alerts.c.status).where(alerts.c.id == alert_id)
+        ).scalar_one()
+
+        investigation_status = conn.execute(
+            select(investigations.c.status).where(
+                investigations.c.id == investigation["id"]
+            )
+        ).scalar_one()
+
+    assert alert_status == "OPEN"
+    assert investigation_status == "IN_PROGRESS"
