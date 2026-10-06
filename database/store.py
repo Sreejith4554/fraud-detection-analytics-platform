@@ -17,8 +17,11 @@ from sqlalchemy import (
     func,
     insert,
     select,
+    update,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+
+from database.schema_version import LATEST_SCHEMA_REVISION
 
 metadata = MetaData()
 revision = Table("schema_revision", metadata, Column("version", Integer, primary_key=True))
@@ -75,6 +78,8 @@ alerts = Table(
     ),
     Column("status", String(20), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("resolved_at", DateTime(timezone=True), nullable=True),
 )
 
 
@@ -91,14 +96,24 @@ def connect(url):
 
 
 def install(engine):
-    # Initial schema installer, not a multi-version migration framework.
+    """Install or verify the latest schema; existing older schemas require migration."""
     with engine.begin() as conn:
         metadata.create_all(conn)
         versions = conn.execute(select(revision.c.version)).scalars().all()
         if not versions:
-            conn.execute(insert(revision).values(version=1))
-        elif versions != [1]:
+            conn.execute(insert(revision).values(version=LATEST_SCHEMA_REVISION))
+        elif versions != [LATEST_SCHEMA_REVISION]:
             raise ValueError("Unsupported schema version")
+
+
+def verify_schema(engine):
+    """Verify the installed revision and required latest-schema columns."""
+    with engine.connect() as conn:
+        if conn.execute(select(revision.c.version)).scalars().all() != [LATEST_SCHEMA_REVISION]:
+            raise ValueError("Schema not installed or incompatible")
+        # Compile and execute zero-row selects to verify required table columns.
+        for table in [transactions, predictions, alerts]:
+            conn.execute(select(table).limit(0))
 
 
 class Store:
@@ -106,12 +121,7 @@ class Store:
         self.engine = connect(url)
 
     def ready(self):
-        with self.engine.connect() as conn:
-            if conn.execute(select(revision.c.version)).scalars().all() != [1]:
-                raise ValueError("Schema not installed or incompatible")
-            # Check required columns, not just database reachability.
-            for table in [transactions, predictions, alerts]:
-                conn.execute(select(table).limit(0))
+        verify_schema(self.engine)
 
     def persist(self, transaction, result, model_hash):
         now = datetime.now(timezone.utc)
@@ -150,7 +160,11 @@ class Store:
             if alert_id:
                 conn.execute(
                     insert(alerts).values(
-                        id=alert_id, prediction_id=pid, status="OPEN", created_at=now
+                        id=alert_id,
+                        prediction_id=pid,
+                        status="OPEN",
+                        created_at=now,
+                        updated_at=now,
                     )
                 )
         # Only return after the transaction commits successfully.
@@ -224,18 +238,70 @@ class Store:
             "scope": "All persisted predictions; UTC dates; no confirmed fraud labels",
         }
 
-    def alert_history(self, limit, offset):
-        with self.engine.connect() as conn:
-            total = conn.scalar(select(func.count()).select_from(alerts))
-            rows = conn.execute(
-                select(
-                    alerts,
-                    predictions.c.model_score,
-                    predictions.c.threshold,
-                    predictions.c.model_version,
-                    transactions.c.source,
+    def resolve_alert(self, alert_id):
+        """Resolve an open alert; repeated resolution is idempotent."""
+        now = datetime.now(timezone.utc)
+
+        with self.engine.begin() as conn:
+            row = (
+                conn.execute(
+                    select(alerts)
+                    .where(alerts.c.id == alert_id)
+                    .with_for_update()
                 )
-                .select_from(alerts.join(predictions).join(transactions))
+                .mappings()
+                .one_or_none()
+            )
+
+            if row is None:
+                return None
+
+            if row["status"] == "OPEN":
+                row = (
+                    conn.execute(
+                        update(alerts)
+                        .where(alerts.c.id == alert_id)
+                        .values(
+                            status="RESOLVED",
+                            updated_at=now,
+                            resolved_at=now,
+                        )
+                        .returning(alerts)
+                    )
+                    .mappings()
+                    .one()
+                )
+            elif row["status"] != "RESOLVED":
+                raise ValueError(f"Unsupported alert status: {row['status']}")
+
+            item = dict(row)
+            for key in ["id", "prediction_id"]:
+                item[key] = str(item[key])
+            for key in ["created_at", "updated_at", "resolved_at"]:
+                item[key] = item[key].isoformat() if item[key] is not None else None
+            return item
+
+    def alert_history(self, limit, offset, status=None):
+        count_query = select(func.count()).select_from(alerts)
+        history_query = (
+            select(
+                alerts,
+                predictions.c.model_score,
+                predictions.c.threshold,
+                predictions.c.model_version,
+                transactions.c.source,
+            )
+            .select_from(alerts.join(predictions).join(transactions))
+        )
+
+        if status is not None:
+            count_query = count_query.where(alerts.c.status == status)
+            history_query = history_query.where(alerts.c.status == status)
+
+        with self.engine.connect() as conn:
+            total = conn.scalar(count_query)
+            rows = conn.execute(
+                history_query
                 .order_by(alerts.c.created_at.desc(), alerts.c.id.desc())
                 .limit(limit)
                 .offset(offset)
@@ -246,5 +312,11 @@ class Store:
                 for key in ["id", "prediction_id"]:
                     item[key] = str(item[key])
                 item["created_at"] = item["created_at"].isoformat()
+                item["updated_at"] = item["updated_at"].isoformat()
+                item["resolved_at"] = (
+                    item["resolved_at"].isoformat()
+                    if item["resolved_at"] is not None
+                    else None
+                )
                 items.append(item)
         return {"total": total, "limit": limit, "offset": offset, "items": items}

@@ -5,7 +5,8 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from uuid import uuid4
+from typing import Literal
+from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -14,9 +15,11 @@ from fastapi.responses import JSONResponse
 from api.schemas import PredictionResponse, ScoreResponse, TransactionInput
 from api.services.inference import InferenceService
 from database.config import database_url as configured_database_url
+from database.schema_version import LATEST_SCHEMA_REVISION
 from database.store import Store
 
 ROOT = Path(__file__).resolve().parents[1]
+APP_VERSION = "1.1.0"
 DISCLAIMER = "PORTFOLIO PROOF-OF-CONCEPT. Not for real financial decisions."
 SCORE_NOTE = "Uncalibrated model score; not an estimate of real-world fraud certainty."
 logger = logging.getLogger("fraud_api")
@@ -54,7 +57,7 @@ def create_app(artifact=None, manifest=None, database_url=None):
 
     app = FastAPI(
         title="Fraud Detection & Analytics Delivery Platform",
-        version="0.7.0",
+        version=APP_VERSION,
         description=DISCLAIMER,
         lifespan=lifespan,
     )
@@ -113,7 +116,7 @@ def create_app(artifact=None, manifest=None, database_url=None):
     async def health():
         return {
             "status": "alive",
-            "release": "0.7.0",
+            "release": APP_VERSION,
             "scoring_ready": app.state.inference is not None,
             "readiness_endpoint": "/ready",
         }
@@ -134,7 +137,7 @@ def create_app(artifact=None, manifest=None, database_url=None):
     async def ready():
         inference()
         database()
-        return {"scoring_ready": True, "prediction_ready": True, "schema_revision": 1}
+        return {"scoring_ready": True, "prediction_ready": True, "schema_revision": LATEST_SCHEMA_REVISION}
 
     @app.get("/model-info")
     async def model_info():
@@ -194,12 +197,32 @@ def create_app(artifact=None, manifest=None, database_url=None):
             raise HTTPException(status_code=503, detail="Analytics unavailable") from None
 
     @app.get("/alerts")
-    async def alert_history(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0)):
+    async def alert_history(
+        limit: int = Query(20, ge=1, le=100),
+        offset: int = Query(0, ge=0),
+        status: Literal["OPEN", "RESOLVED"] | None = None,
+    ):
         store = database()
         try:
-            return store.alert_history(limit, offset)
+            return store.alert_history(limit, offset, status=status)
         except Exception:
             raise HTTPException(status_code=503, detail="Alerts unavailable") from None
+
+    @app.post("/alerts/{alert_id}/resolve")
+    async def resolve_alert(alert_id: UUID):
+        store = database()
+        try:
+            result = store.resolve_alert(alert_id)
+        except Exception:
+            logger.error(json.dumps({"event": "alert_resolution_failed"}))
+            raise HTTPException(
+                status_code=503, detail="Alert could not be resolved"
+            ) from None
+
+        if result is None:
+            raise HTTPException(status_code=404, detail="Alert not found")
+
+        return result
 
     @app.get("/metrics")
     async def metrics():

@@ -19,3 +19,6 @@ reports/
 !artifacts/
 artifacts/*
 !artifacts/model.joblib
+
+# Local database backups
+backups/

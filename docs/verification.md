@@ -1,4 +1,4 @@
-# Current verification status — 5 October 2026
+# Current verification status — 6 October 2026
 
 The end-to-end portfolio proof-of-concept is currently working and verified. The sections below preserve historical milestone results and should be read as point-in-time development records rather than the present release state.
 
@@ -7,10 +7,10 @@ Current verified state:
 - canonical model artifact integrity verified
 - FastAPI inference operational
 - PostgreSQL persistence and transactional alert creation operational
-- Streamlit analytics dashboard operational
+- Streamlit analytics dashboard operational, including OPEN/RESOLVED alert views and API-backed alert resolution
 - local Docker Compose runtime verified
 - PostgreSQL restart/persistence behavior verified
-- latest complete local PostgreSQL-backed regression suite: **70 passed, 0 failed, 0 skipped**
+- latest complete local PostgreSQL-backed regression suite: **81 passed, 0 failed, 0 skipped**
 - hosted GitHub integration pipeline verified successfully
 - hosted Docker Compose build/runtime verification completed successfully
 - dependency vulnerability audit included in the passing CI gate
@@ -20,11 +20,13 @@ Current verified state:
 - deterministic validation-partition demo replay implemented without using ground-truth labels for row selection
 - synthetic out-of-distribution alert-path demonstration verified through the real inference, persistence, alert, and dashboard path
 
-The current application commit verified by both the hosted portfolio build and CodeQL is:
+The current development commit verified by the hosted portfolio build is:
 
-`11cb733ca0162c6f6ae5557c530b04f39b3f56e7`
+`61fd9bdcaa94da7f08bb752ace06f25bf1d7cff0`
 
-The project remains a **portfolio proof-of-concept, not a production banking system**. Authentication/authorization, analyst case management, production-scale load validation, real bank integration, public application deployment, formal accessibility testing, external penetration testing, production disaster recovery, and real financial use are not claimed.
+CodeQL remains passing for the released v1.0.0 baseline. The current feature branch will receive commit-specific CodeQL verification when proposed to `main`.
+
+The project remains a **portfolio proof-of-concept, not a production banking system**. Authentication/authorization, full analyst case management, production-scale load validation, real bank integration, public application deployment, formal accessibility testing, external penetration testing, production disaster recovery, and real financial use are not claimed.
 
 See [release readiness](release-readiness.md) for the authoritative current release-gate assessment.
 

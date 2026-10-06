@@ -112,13 +112,13 @@ def test_database_unavailable_returns_no_success():
 
 def test_schema_revision_gate(store):
     with store.engine.begin() as conn:
-        conn.execute(text("UPDATE schema_revision SET version=2"))
+        conn.execute(text("UPDATE schema_revision SET version=3"))
     try:
         with TestClient(create_app(database_url=URL)) as client:
             assert client.get("/ready").status_code == 503
     finally:
         with store.engine.begin() as conn:
-            conn.execute(text("UPDATE schema_revision SET version=1"))
+            conn.execute(text("UPDATE schema_revision SET version=2"))
 
 
 def test_analytics_empty_database(store):
@@ -146,6 +146,8 @@ def test_global_analytics_exceeds_history_page_and_alert_join(store):
         assert result["sources"] == {"SYNTHETIC": 22}
         alert = client.get("/alerts").json()["items"][0]
         assert alert["id"] == high["alert_id"] and alert["prediction_id"] == high["prediction_id"]
+        assert alert["updated_at"] == alert["created_at"]
+        assert alert["resolved_at"] is None
         assert client.get("/alerts?limit=101").status_code == 422
         assert client.get("/alerts?offset=-1").status_code == 422
 
@@ -212,3 +214,187 @@ def test_streamlit_unavailable_api(monkeypatch):
     assert not app.exception
     assert app.error
     assert not app.metric
+
+def test_alert_resolution_lifecycle_is_atomic_and_idempotent(store):
+    app = create_app(database_url=URL)
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+
+    alert_id = created["alert_id"]
+    before = store.alert_history(20, 0)["items"][0]
+    assert before["id"] == alert_id
+    assert before["status"] == "OPEN"
+    assert before["resolved_at"] is None
+
+    resolved = store.resolve_alert(alert_id)
+    assert resolved is not None
+    assert resolved["id"] == alert_id
+    assert resolved["status"] == "RESOLVED"
+    assert resolved["resolved_at"] is not None
+    assert resolved["updated_at"] == resolved["resolved_at"]
+    assert resolved["updated_at"] >= resolved["created_at"]
+
+    first_resolved_at = resolved["resolved_at"]
+
+    again = store.resolve_alert(alert_id)
+    assert again is not None
+    assert again["status"] == "RESOLVED"
+    assert again["resolved_at"] == first_resolved_at
+    assert again["updated_at"] == first_resolved_at
+
+    assert store.resolve_alert("00000000-0000-0000-0000-000000000000") is None
+
+
+def test_resolve_alert_api_contract(store, monkeypatch):
+    app = create_app(database_url=URL)
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+        alert_id = created["alert_id"]
+
+        resolved = client.post(f"/alerts/{alert_id}/resolve")
+        assert resolved.status_code == 200
+        body = resolved.json()
+        assert body["id"] == alert_id
+        assert body["status"] == "RESOLVED"
+        assert body["resolved_at"] is not None
+        assert body["updated_at"] == body["resolved_at"]
+
+        first_resolved_at = body["resolved_at"]
+
+        repeated = client.post(f"/alerts/{alert_id}/resolve")
+        assert repeated.status_code == 200
+        assert repeated.json()["resolved_at"] == first_resolved_at
+
+        missing = client.post(
+            "/alerts/00000000-0000-0000-0000-000000000000/resolve"
+        )
+        assert missing.status_code == 404
+        assert missing.json() == {"detail": "Alert not found"}
+
+        malformed = client.post("/alerts/not-a-uuid/resolve")
+        assert malformed.status_code == 422
+
+        def fail_resolution(alert_id):
+            raise RuntimeError("controlled database failure")
+
+        monkeypatch.setattr(app.state.store, "resolve_alert", fail_resolution)
+        failed = client.post(f"/alerts/{alert_id}/resolve")
+        assert failed.status_code == 503
+        assert failed.json() == {"detail": "Alert could not be resolved"}
+        assert "controlled database failure" not in failed.text
+
+def test_alert_history_status_filter_applies_before_pagination(store):
+    app = create_app(database_url=URL)
+    with TestClient(app) as client:
+        first = client.post("/predict", json=high_payload(app)).json()
+        second = client.post("/predict", json=high_payload(app)).json()
+
+        resolved = client.post(f"/alerts/{first['alert_id']}/resolve")
+        assert resolved.status_code == 200
+
+        all_alerts = client.get("/alerts?limit=1&offset=0")
+        assert all_alerts.status_code == 200
+        assert all_alerts.json()["total"] == 2
+        assert len(all_alerts.json()["items"]) == 1
+
+        open_alerts = client.get("/alerts?status=OPEN&limit=1&offset=0")
+        assert open_alerts.status_code == 200
+        assert open_alerts.json()["total"] == 1
+        assert len(open_alerts.json()["items"]) == 1
+        assert open_alerts.json()["items"][0]["id"] == second["alert_id"]
+        assert open_alerts.json()["items"][0]["status"] == "OPEN"
+
+        resolved_alerts = client.get("/alerts?status=RESOLVED&limit=1&offset=0")
+        assert resolved_alerts.status_code == 200
+        assert resolved_alerts.json()["total"] == 1
+        assert len(resolved_alerts.json()["items"]) == 1
+        assert resolved_alerts.json()["items"][0]["id"] == first["alert_id"]
+        assert resolved_alerts.json()["items"][0]["status"] == "RESOLVED"
+
+        invalid = client.get("/alerts?status=CLOSED")
+        assert invalid.status_code == 422
+
+def test_streamlit_review_queue_resolves_alert_through_http(store, monkeypatch):
+    import subprocess
+    import sys
+    import time
+
+    import httpx
+    from streamlit.testing.v1 import AppTest
+
+    api_app = create_app(database_url=URL)
+    with TestClient(api_app) as client:
+        created = client.post("/predict", json=high_payload(api_app)).json()
+        alert_id = created["alert_id"]
+
+    environment = {**os.environ, "DATABASE_URL": URL}
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "api.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8769",
+            "--no-access-log",
+        ],
+        env=environment,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    monkeypatch.setenv("API_BASE_URL", "http://127.0.0.1:8769")
+
+    try:
+        for _ in range(100):
+            try:
+                if httpx.get("http://127.0.0.1:8769/ready", timeout=1).status_code == 200:
+                    break
+            except httpx.HTTPError:
+                pass
+            time.sleep(0.1)
+        else:
+            raise AssertionError("Test API not ready")
+
+        app = AppTest.from_file(ROOT / "dashboard/app.py", default_timeout=20).run()
+        assert not app.exception
+
+        status_control = next(
+            control for control in app.radio if control.label == "Alert status"
+        )
+        assert status_control.value == "OPEN"
+
+        resolve = next(
+            button for button in app.button
+            if button.label == f"Resolve alert {alert_id}"
+        )
+        resolve.click().run()
+
+        assert not app.exception
+
+        with store.engine.connect() as conn:
+            row = conn.execute(
+                select(
+                    alerts.c.status,
+                    alerts.c.updated_at,
+                    alerts.c.resolved_at,
+                ).where(alerts.c.id == alert_id)
+            ).one()
+
+        assert row.status == "RESOLVED"
+        assert row.resolved_at is not None
+        assert row.updated_at == row.resolved_at
+
+        app = next(
+            control for control in app.radio if control.label == "Alert status"
+        ).set_value("RESOLVED").run()
+
+        assert not app.exception
+        assert any(
+            alert_id in str(dataframe.value)
+            for dataframe in app.dataframe
+        )
+    finally:
+        process.terminate()
+        process.wait(timeout=10)
