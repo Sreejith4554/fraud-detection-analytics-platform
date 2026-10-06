@@ -128,7 +128,7 @@ The flagged share is deliberately **not described as a fraud rate** because runt
 
 ![Persisted synthetic review alert displayed in the Streamlit review queue](docs/images/review-queue.png)
 
-*The synthetic stress-test prediction passed through the real inference and persistence path, created a PostgreSQL alert, and appeared in the read-only review queue. This demonstrates workflow integration; it is not evidence of real-world fraud-detection performance.*
+*The synthetic stress-test prediction passed through the real inference and persistence path, created a PostgreSQL alert, and appeared in the review queue. This demonstrates workflow integration; it is not evidence of real-world fraud-detection performance.*
 
 The alert-path demonstration exercises:
 
@@ -186,7 +186,8 @@ The core proof-of-concept is working and verified.
 | Local browser visual verification | ✅ Completed |
 | Public/cloud deployment | ❌ Not implemented |
 | Authentication/authorization | ❌ Not implemented |
-| Human investigation/case workflow | ❌ Not implemented |
+| Basic alert investigation lifecycle | ✅ Working |
+| Full investigation/case management | ❌ Not implemented |
 | Production-scale load validation | ❌ Not implemented |
 | Real bank integration | ❌ Not implemented |
 | Production financial use | ❌ Not appropriate |
@@ -239,7 +240,7 @@ The hosted integration and Compose pipeline has been successfully executed on Gi
 The latest complete local integration run executed the full suite against a dedicated PostgreSQL test database:
 
 ```text
-70 passed
+81 passed
 0 failed
 0 skipped
 ```
@@ -473,7 +474,7 @@ Displays persisted alerts with:
 - model version
 - source provenance
 
-The queue is intentionally read-only. Analyst acknowledgement, case assignment, investigation notes, disposition, and audit history are outside the current v1 scope.
+The queue supports OPEN and RESOLVED views. OPEN alerts can be marked RESOLVED through the API-backed dashboard workflow; this records lifecycle state only and does not establish whether fraud occurred. Analyst assignment, investigation notes, richer disposition, authentication/authorization, and analyst audit history are not implemented.
 
 ### Submit demo
 
