@@ -5,6 +5,7 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -195,10 +196,14 @@ def create_app(artifact=None, manifest=None, database_url=None):
             raise HTTPException(status_code=503, detail="Analytics unavailable") from None
 
     @app.get("/alerts")
-    async def alert_history(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0)):
+    async def alert_history(
+        limit: int = Query(20, ge=1, le=100),
+        offset: int = Query(0, ge=0),
+        status: Literal["OPEN", "RESOLVED"] | None = None,
+    ):
         store = database()
         try:
-            return store.alert_history(limit, offset)
+            return store.alert_history(limit, offset, status=status)
         except Exception:
             raise HTTPException(status_code=503, detail="Alerts unavailable") from None
 

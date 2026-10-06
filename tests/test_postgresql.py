@@ -282,3 +282,119 @@ def test_resolve_alert_api_contract(store, monkeypatch):
         assert failed.status_code == 503
         assert failed.json() == {"detail": "Alert could not be resolved"}
         assert "controlled database failure" not in failed.text
+
+def test_alert_history_status_filter_applies_before_pagination(store):
+    app = create_app(database_url=URL)
+    with TestClient(app) as client:
+        first = client.post("/predict", json=high_payload(app)).json()
+        second = client.post("/predict", json=high_payload(app)).json()
+
+        resolved = client.post(f"/alerts/{first['alert_id']}/resolve")
+        assert resolved.status_code == 200
+
+        all_alerts = client.get("/alerts?limit=1&offset=0")
+        assert all_alerts.status_code == 200
+        assert all_alerts.json()["total"] == 2
+        assert len(all_alerts.json()["items"]) == 1
+
+        open_alerts = client.get("/alerts?status=OPEN&limit=1&offset=0")
+        assert open_alerts.status_code == 200
+        assert open_alerts.json()["total"] == 1
+        assert len(open_alerts.json()["items"]) == 1
+        assert open_alerts.json()["items"][0]["id"] == second["alert_id"]
+        assert open_alerts.json()["items"][0]["status"] == "OPEN"
+
+        resolved_alerts = client.get("/alerts?status=RESOLVED&limit=1&offset=0")
+        assert resolved_alerts.status_code == 200
+        assert resolved_alerts.json()["total"] == 1
+        assert len(resolved_alerts.json()["items"]) == 1
+        assert resolved_alerts.json()["items"][0]["id"] == first["alert_id"]
+        assert resolved_alerts.json()["items"][0]["status"] == "RESOLVED"
+
+        invalid = client.get("/alerts?status=CLOSED")
+        assert invalid.status_code == 422
+
+def test_streamlit_review_queue_resolves_alert_through_http(store, monkeypatch):
+    import subprocess
+    import sys
+    import time
+
+    import httpx
+    from streamlit.testing.v1 import AppTest
+
+    api_app = create_app(database_url=URL)
+    with TestClient(api_app) as client:
+        created = client.post("/predict", json=high_payload(api_app)).json()
+        alert_id = created["alert_id"]
+
+    environment = {**os.environ, "DATABASE_URL": URL}
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "api.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8769",
+            "--no-access-log",
+        ],
+        env=environment,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    monkeypatch.setenv("API_BASE_URL", "http://127.0.0.1:8769")
+
+    try:
+        for _ in range(100):
+            try:
+                if httpx.get("http://127.0.0.1:8769/ready", timeout=1).status_code == 200:
+                    break
+            except httpx.HTTPError:
+                pass
+            time.sleep(0.1)
+        else:
+            raise AssertionError("Test API not ready")
+
+        app = AppTest.from_file(ROOT / "dashboard/app.py", default_timeout=20).run()
+        assert not app.exception
+
+        status_control = next(
+            control for control in app.radio if control.label == "Alert status"
+        )
+        assert status_control.value == "OPEN"
+
+        resolve = next(
+            button for button in app.button
+            if button.label == f"Resolve alert {alert_id}"
+        )
+        resolve.click().run()
+
+        assert not app.exception
+
+        with store.engine.connect() as conn:
+            row = conn.execute(
+                select(
+                    alerts.c.status,
+                    alerts.c.updated_at,
+                    alerts.c.resolved_at,
+                ).where(alerts.c.id == alert_id)
+            ).one()
+
+        assert row.status == "RESOLVED"
+        assert row.resolved_at is not None
+        assert row.updated_at == row.resolved_at
+
+        app = next(
+            control for control in app.radio if control.label == "Alert status"
+        ).set_value("RESOLVED").run()
+
+        assert not app.exception
+        assert any(
+            alert_id in str(dataframe.value)
+            for dataframe in app.dataframe
+        )
+    finally:
+        process.terminate()
+        process.wait(timeout=10)

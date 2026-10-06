@@ -281,18 +281,27 @@ class Store:
                 item[key] = item[key].isoformat() if item[key] is not None else None
             return item
 
-    def alert_history(self, limit, offset):
+    def alert_history(self, limit, offset, status=None):
+        count_query = select(func.count()).select_from(alerts)
+        history_query = (
+            select(
+                alerts,
+                predictions.c.model_score,
+                predictions.c.threshold,
+                predictions.c.model_version,
+                transactions.c.source,
+            )
+            .select_from(alerts.join(predictions).join(transactions))
+        )
+
+        if status is not None:
+            count_query = count_query.where(alerts.c.status == status)
+            history_query = history_query.where(alerts.c.status == status)
+
         with self.engine.connect() as conn:
-            total = conn.scalar(select(func.count()).select_from(alerts))
+            total = conn.scalar(count_query)
             rows = conn.execute(
-                select(
-                    alerts,
-                    predictions.c.model_score,
-                    predictions.c.threshold,
-                    predictions.c.model_version,
-                    transactions.c.source,
-                )
-                .select_from(alerts.join(predictions).join(transactions))
+                history_query
                 .order_by(alerts.c.created_at.desc(), alerts.c.id.desc())
                 .limit(limit)
                 .offset(offset)

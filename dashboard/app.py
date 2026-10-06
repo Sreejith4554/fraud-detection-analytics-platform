@@ -94,16 +94,50 @@ with overview:
 with queue:
     st.subheader("Persisted review alerts")
     st.caption(
-        "Read-only queue. OPEN is a stored status; acknowledgement and case management are not implemented."
+        "Demonstration investigation queue. Alerts can be marked RESOLVED, "
+        "but analyst assignment, notes, authentication, and case management "
+        "are not implemented."
+    )
+    alert_status = st.radio(
+        "Alert status",
+        ["OPEN", "RESOLVED"],
+        horizontal=True,
     )
     offset = st.number_input("Alert offset", min_value=0, step=20, value=0)
     try:
-        alerts = call(f"/alerts?limit=20&offset={offset}")
-        st.write(f"{alerts['total']} alerts total · up to 20 on this page")
+        alerts = call(
+            f"/alerts?status={alert_status}&limit=20&offset={offset}"
+        )
+        st.write(
+            f"{alerts['total']} {alert_status.lower()} alerts total - "
+            "up to 20 on this page"
+        )
         if alerts["items"]:
-            st.dataframe(pd.DataFrame(alerts["items"]), hide_index=True, width="stretch")
+            st.dataframe(
+                pd.DataFrame(alerts["items"]),
+                hide_index=True,
+                width="stretch",
+            )
+            if alert_status == "OPEN":
+                st.caption(
+                    "Resolving an alert records its lifecycle state only; "
+                    "it does not establish whether fraud occurred."
+                )
+                for alert in alerts["items"]:
+                    if st.button(
+                        f"Resolve alert {alert['id']}",
+                        key=f"resolve-{alert['id']}",
+                    ):
+                        try:
+                            call(f"/alerts/{alert['id']}/resolve", {})
+                            st.rerun()
+                        except (httpx.HTTPError, ValueError):
+                            st.error(
+                                "Alert resolution failed. Refresh and verify "
+                                "the alert state before retrying."
+                            )
         else:
-            st.info("No alerts on this page.")
+            st.info(f"No {alert_status.lower()} alerts on this page.")
     except (httpx.HTTPError, ValueError):
         st.error("Alert history unavailable. Refresh after checking the API.")
 with submit:
