@@ -17,6 +17,7 @@ from sqlalchemy import (
     func,
     insert,
     select,
+    update,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
@@ -236,6 +237,49 @@ class Store:
             "sources": sources,
             "scope": "All persisted predictions; UTC dates; no confirmed fraud labels",
         }
+
+    def resolve_alert(self, alert_id):
+        """Resolve an open alert; repeated resolution is idempotent."""
+        now = datetime.now(timezone.utc)
+
+        with self.engine.begin() as conn:
+            row = (
+                conn.execute(
+                    select(alerts)
+                    .where(alerts.c.id == alert_id)
+                    .with_for_update()
+                )
+                .mappings()
+                .one_or_none()
+            )
+
+            if row is None:
+                return None
+
+            if row["status"] == "OPEN":
+                row = (
+                    conn.execute(
+                        update(alerts)
+                        .where(alerts.c.id == alert_id)
+                        .values(
+                            status="RESOLVED",
+                            updated_at=now,
+                            resolved_at=now,
+                        )
+                        .returning(alerts)
+                    )
+                    .mappings()
+                    .one()
+                )
+            elif row["status"] != "RESOLVED":
+                raise ValueError(f"Unsupported alert status: {row['status']}")
+
+            item = dict(row)
+            for key in ["id", "prediction_id"]:
+                item[key] = str(item[key])
+            for key in ["created_at", "updated_at", "resolved_at"]:
+                item[key] = item[key].isoformat() if item[key] is not None else None
+            return item
 
     def alert_history(self, limit, offset):
         with self.engine.connect() as conn:

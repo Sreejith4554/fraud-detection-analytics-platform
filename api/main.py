@@ -5,7 +5,7 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -201,6 +201,22 @@ def create_app(artifact=None, manifest=None, database_url=None):
             return store.alert_history(limit, offset)
         except Exception:
             raise HTTPException(status_code=503, detail="Alerts unavailable") from None
+
+    @app.post("/alerts/{alert_id}/resolve")
+    async def resolve_alert(alert_id: UUID):
+        store = database()
+        try:
+            result = store.resolve_alert(alert_id)
+        except Exception:
+            logger.error(json.dumps({"event": "alert_resolution_failed"}))
+            raise HTTPException(
+                status_code=503, detail="Alert could not be resolved"
+            ) from None
+
+        if result is None:
+            raise HTTPException(status_code=404, detail="Alert not found")
+
+        return result
 
     @app.get("/metrics")
     async def metrics():

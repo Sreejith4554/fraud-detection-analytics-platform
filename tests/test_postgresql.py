@@ -214,3 +214,71 @@ def test_streamlit_unavailable_api(monkeypatch):
     assert not app.exception
     assert app.error
     assert not app.metric
+
+def test_alert_resolution_lifecycle_is_atomic_and_idempotent(store):
+    app = create_app(database_url=URL)
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+
+    alert_id = created["alert_id"]
+    before = store.alert_history(20, 0)["items"][0]
+    assert before["id"] == alert_id
+    assert before["status"] == "OPEN"
+    assert before["resolved_at"] is None
+
+    resolved = store.resolve_alert(alert_id)
+    assert resolved is not None
+    assert resolved["id"] == alert_id
+    assert resolved["status"] == "RESOLVED"
+    assert resolved["resolved_at"] is not None
+    assert resolved["updated_at"] == resolved["resolved_at"]
+    assert resolved["updated_at"] >= resolved["created_at"]
+
+    first_resolved_at = resolved["resolved_at"]
+
+    again = store.resolve_alert(alert_id)
+    assert again is not None
+    assert again["status"] == "RESOLVED"
+    assert again["resolved_at"] == first_resolved_at
+    assert again["updated_at"] == first_resolved_at
+
+    assert store.resolve_alert("00000000-0000-0000-0000-000000000000") is None
+
+
+def test_resolve_alert_api_contract(store, monkeypatch):
+    app = create_app(database_url=URL)
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+        alert_id = created["alert_id"]
+
+        resolved = client.post(f"/alerts/{alert_id}/resolve")
+        assert resolved.status_code == 200
+        body = resolved.json()
+        assert body["id"] == alert_id
+        assert body["status"] == "RESOLVED"
+        assert body["resolved_at"] is not None
+        assert body["updated_at"] == body["resolved_at"]
+
+        first_resolved_at = body["resolved_at"]
+
+        repeated = client.post(f"/alerts/{alert_id}/resolve")
+        assert repeated.status_code == 200
+        assert repeated.json()["resolved_at"] == first_resolved_at
+
+        missing = client.post(
+            "/alerts/00000000-0000-0000-0000-000000000000/resolve"
+        )
+        assert missing.status_code == 404
+        assert missing.json() == {"detail": "Alert not found"}
+
+        malformed = client.post("/alerts/not-a-uuid/resolve")
+        assert malformed.status_code == 422
+
+        def fail_resolution(alert_id):
+            raise RuntimeError("controlled database failure")
+
+        monkeypatch.setattr(app.state.store, "resolve_alert", fail_resolution)
+        failed = client.post(f"/alerts/{alert_id}/resolve")
+        assert failed.status_code == 503
+        assert failed.json() == {"detail": "Alert could not be resolved"}
+        assert "controlled database failure" not in failed.text
