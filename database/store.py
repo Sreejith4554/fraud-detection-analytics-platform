@@ -355,6 +355,23 @@ class Store:
         item["created_at"] = item["created_at"].isoformat()
         return item
 
+    def investigation_for_alert(self, alert_id):
+        """Return the investigation associated with an alert, if one exists."""
+        with self.engine.connect() as conn:
+            row = (
+                conn.execute(
+                    select(investigations).where(
+                        investigations.c.alert_id == alert_id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+
+        if row is None:
+            return None
+        return self._serialize_investigation(row)
+
     def start_investigation(self, alert_id):
         """Start one investigation for an open alert; repeated start is idempotent."""
         now = datetime.now(timezone.utc)

@@ -544,3 +544,114 @@ def test_active_investigation_prevents_direct_alert_resolution(store):
 
     assert alert_status == "OPEN"
     assert investigation_status == "IN_PROGRESS"
+
+
+def test_investigation_api_lifecycle_and_conflicts(store):
+    app = create_app(database_url=URL)
+
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+        alert_id = created["alert_id"]
+
+        started = client.post(f"/alerts/{alert_id}/investigation")
+        assert started.status_code == 201
+        investigation = started.json()
+        assert investigation["alert_id"] == alert_id
+        assert investigation["status"] == "IN_PROGRESS"
+        assert investigation["disposition"] is None
+        investigation_id = investigation["id"]
+
+        repeated = client.post(f"/alerts/{alert_id}/investigation")
+        assert repeated.status_code == 200
+        assert repeated.json()["id"] == investigation_id
+
+        direct_resolve = client.post(f"/alerts/{alert_id}/resolve")
+        assert direct_resolve.status_code == 409
+        assert direct_resolve.json() == {
+            "detail": "Alert has an active investigation"
+        }
+
+        note = client.post(
+            f"/investigations/{investigation_id}/notes",
+            json={"body": "Reviewed transaction context and model evidence."},
+        )
+        assert note.status_code == 201
+        assert note.json()["investigation_id"] == investigation_id
+
+        closed = client.post(
+            f"/investigations/{investigation_id}/close",
+            json={"disposition": "FALSE_POSITIVE"},
+        )
+        assert closed.status_code == 200
+        assert closed.json()["status"] == "CLOSED"
+        assert closed.json()["disposition"] == "FALSE_POSITIVE"
+
+        repeated_close = client.post(
+            f"/investigations/{investigation_id}/close",
+            json={"disposition": "FALSE_POSITIVE"},
+        )
+        assert repeated_close.status_code == 200
+        assert repeated_close.json()["closed_at"] == closed.json()["closed_at"]
+
+        changed_disposition = client.post(
+            f"/investigations/{investigation_id}/close",
+            json={"disposition": "INCONCLUSIVE"},
+        )
+        assert changed_disposition.status_code == 409
+
+        late_note = client.post(
+            f"/investigations/{investigation_id}/notes",
+            json={"body": "This must not be accepted."},
+        )
+        assert late_note.status_code == 409
+
+
+def test_investigation_api_missing_resources_and_validation(store):
+    app = create_app(database_url=URL)
+    missing = "00000000-0000-0000-0000-000000000000"
+
+    with TestClient(app) as client:
+        assert client.post(f"/alerts/{missing}/investigation").status_code == 404
+
+        assert client.post(
+            f"/investigations/{missing}/notes",
+            json={"body": "Missing investigation"},
+        ).status_code == 404
+
+        assert client.post(
+            f"/investigations/{missing}/close",
+            json={"disposition": "INCONCLUSIVE"},
+        ).status_code == 404
+
+        malformed = client.post("/alerts/not-a-uuid/investigation")
+        assert malformed.status_code == 422
+        assert "input" not in str(malformed.json()).lower()
+
+        blank = client.post(
+            f"/investigations/{missing}/notes",
+            json={"body": "   "},
+        )
+        assert blank.status_code == 422
+
+        invalid_disposition = client.post(
+            f"/investigations/{missing}/close",
+            json={"disposition": "MODEL_SAYS_FRAUD"},
+        )
+        assert invalid_disposition.status_code == 422
+
+
+def test_investigation_api_rejects_start_for_resolved_alert(store):
+    app = create_app(database_url=URL)
+
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+        alert_id = created["alert_id"]
+
+        resolved = client.post(f"/alerts/{alert_id}/resolve")
+        assert resolved.status_code == 200
+
+        start = client.post(f"/alerts/{alert_id}/investigation")
+        assert start.status_code == 409
+        assert start.json() == {
+            "detail": "Resolved alert cannot start an investigation"
+        }
