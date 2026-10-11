@@ -703,3 +703,252 @@ def test_investigation_detail_returns_ordered_notes(store):
         malformed = client.get("/investigations/not-a-uuid")
         assert malformed.status_code == 422
         assert "input" not in str(malformed.json()).lower()
+
+def test_streamlit_investigation_workflow_through_http(store, monkeypatch):
+    import subprocess
+    import sys
+    import time
+
+    import httpx
+    from streamlit.testing.v1 import AppTest
+
+    api_app = create_app(database_url=URL)
+    with TestClient(api_app) as client:
+        created = client.post("/predict", json=high_payload(api_app)).json()
+        alert_id = created["alert_id"]
+
+    environment = {**os.environ, "DATABASE_URL": URL}
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "api.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8770",
+            "--no-access-log",
+        ],
+        env=environment,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    monkeypatch.setenv("API_BASE_URL", "http://127.0.0.1:8770")
+
+    try:
+        for _ in range(100):
+            try:
+                if (
+                    httpx.get(
+                        "http://127.0.0.1:8770/ready",
+                        timeout=1,
+                    ).status_code
+                    == 200
+                ):
+                    break
+            except httpx.HTTPError:
+                pass
+            time.sleep(0.1)
+        else:
+            raise AssertionError("Test API not ready")
+
+        app = AppTest.from_file(
+            ROOT / "dashboard/app.py",
+            default_timeout=20,
+        ).run()
+        assert not app.exception
+
+        start = next(
+            button
+            for button in app.button
+            if button.label == f"Start investigation {alert_id}"
+        )
+        start.click().run()
+
+        assert not app.exception
+
+        with store.engine.connect() as conn:
+            investigation = conn.execute(
+                select(investigations).where(
+                    investigations.c.alert_id == alert_id
+                )
+            ).mappings().one()
+
+        investigation_id = str(investigation["id"])
+        assert investigation["status"] == "IN_PROGRESS"
+        assert investigation["disposition"] is None
+
+        note_input = next(
+            area
+            for area in app.text_area
+            if area.label == f"Investigation note {investigation_id}"
+        )
+        note_input.set_value("Reviewed transaction context.")
+
+        add_note = next(
+            button
+            for button in app.button
+            if button.label == f"Add note {investigation_id}"
+        )
+        add_note.click().run()
+
+        assert not app.exception
+
+        detail = store.investigation_detail(investigation_id)
+        assert [note["body"] for note in detail["notes"]] == [
+            "Reviewed transaction context."
+        ]
+
+        disposition = next(
+            control
+            for control in app.selectbox
+            if control.label == f"Disposition {investigation_id}"
+        )
+        app = disposition.set_value("FALSE_POSITIVE").run()
+
+        close = next(
+            button
+            for button in app.button
+            if button.label == f"Close investigation {investigation_id}"
+        )
+        close.click().run()
+
+        assert not app.exception
+
+        detail = store.investigation_detail(investigation_id)
+        assert detail["status"] == "CLOSED"
+        assert detail["disposition"] == "FALSE_POSITIVE"
+        assert detail["closed_at"] is not None
+
+        with store.engine.connect() as conn:
+            alert = conn.execute(
+                select(
+                    alerts.c.status,
+                    alerts.c.resolved_at,
+                ).where(alerts.c.id == alert_id)
+            ).one()
+
+        assert alert.status == "RESOLVED"
+        assert alert.resolved_at is not None
+    finally:
+        process.terminate()
+        process.wait(timeout=10)
+
+
+def test_investigation_lookup_by_alert_api(store):
+    app = create_app(database_url=URL)
+
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+        alert_id = created["alert_id"]
+
+        absent = client.get(f"/alerts/{alert_id}/investigation")
+        assert absent.status_code == 404
+        assert absent.json() == {"detail": "Investigation not found"}
+
+        started = client.post(f"/alerts/{alert_id}/investigation")
+        assert started.status_code == 201
+        investigation = started.json()
+
+        lookup = client.get(f"/alerts/{alert_id}/investigation")
+        assert lookup.status_code == 200
+        assert lookup.json()["id"] == investigation["id"]
+        assert lookup.json()["alert_id"] == alert_id
+        assert lookup.json()["status"] == "IN_PROGRESS"
+
+        missing = client.get(
+            "/alerts/00000000-0000-0000-0000-000000000000/investigation"
+        )
+        assert missing.status_code == 404
+        assert missing.json() == {"detail": "Investigation not found"}
+
+        malformed = client.get("/alerts/not-a-uuid/investigation")
+        assert malformed.status_code == 422
+        assert "input" not in str(malformed.json()).lower()
+
+
+def test_streamlit_recovers_persisted_investigation_after_refresh(
+    store,
+    monkeypatch,
+):
+    import subprocess
+    import sys
+    import time
+
+    import httpx
+    from streamlit.testing.v1 import AppTest
+
+    api_app = create_app(database_url=URL)
+    with TestClient(api_app) as client:
+        created = client.post("/predict", json=high_payload(api_app)).json()
+        alert_id = created["alert_id"]
+
+        started = client.post(f"/alerts/{alert_id}/investigation")
+        assert started.status_code == 201
+        investigation_id = started.json()["id"]
+
+    environment = {**os.environ, "DATABASE_URL": URL}
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "api.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8771",
+            "--no-access-log",
+        ],
+        env=environment,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    monkeypatch.setenv("API_BASE_URL", "http://127.0.0.1:8771")
+
+    try:
+        for _ in range(100):
+            try:
+                if (
+                    httpx.get(
+                        "http://127.0.0.1:8771/ready",
+                        timeout=1,
+                    ).status_code
+                    == 200
+                ):
+                    break
+            except httpx.HTTPError:
+                pass
+            time.sleep(0.1)
+        else:
+            raise AssertionError("Test API not ready")
+
+        app = AppTest.from_file(
+            ROOT / "dashboard/app.py",
+            default_timeout=20,
+        ).run()
+
+        assert not app.exception
+
+        assert not any(
+            button.label == f"Start investigation {alert_id}"
+            for button in app.button
+        )
+
+        assert any(
+            area.label == f"Investigation note {investigation_id}"
+            for area in app.text_area
+        )
+
+        assert any(
+            control.label == f"Disposition {investigation_id}"
+            for control in app.selectbox
+        )
+
+        detail = store.investigation_detail(investigation_id)
+        assert detail["status"] == "IN_PROGRESS"
+        assert detail["alert_id"] == alert_id
+    finally:
+        process.terminate()
+        process.wait(timeout=10)

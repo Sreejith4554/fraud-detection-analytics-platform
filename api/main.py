@@ -240,6 +240,29 @@ def create_app(artifact=None, manifest=None, database_url=None):
 
         return result
 
+    @app.get("/alerts/{alert_id}/investigation")
+    async def investigation_for_alert(alert_id: UUID):
+        store = database()
+
+        try:
+            result = store.investigation_for_alert(alert_id)
+        except Exception:
+            logger.error(
+                json.dumps({"event": "investigation_lookup_failed"})
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Investigation unavailable",
+            ) from None
+
+        if result is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Investigation not found",
+            )
+
+        return result
+
     @app.post("/alerts/{alert_id}/investigation")
     async def start_investigation(alert_id: UUID):
         store = database()
