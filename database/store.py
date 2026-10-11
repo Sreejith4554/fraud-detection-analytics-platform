@@ -372,6 +372,44 @@ class Store:
             return None
         return self._serialize_investigation(row)
 
+    def investigation_detail(self, investigation_id):
+        """Return an investigation with its append-only notes in timeline order."""
+        with self.engine.connect() as conn:
+            investigation = (
+                conn.execute(
+                    select(investigations).where(
+                        investigations.c.id == investigation_id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+
+            if investigation is None:
+                return None
+
+            notes = (
+                conn.execute(
+                    select(investigation_notes)
+                    .where(
+                        investigation_notes.c.investigation_id
+                        == investigation_id
+                    )
+                    .order_by(
+                        investigation_notes.c.created_at.asc(),
+                        investigation_notes.c.id.asc(),
+                    )
+                )
+                .mappings()
+                .all()
+            )
+
+        item = self._serialize_investigation(investigation)
+        item["notes"] = [
+            self._serialize_investigation_note(note) for note in notes
+        ]
+        return item
+
     def start_investigation(self, alert_id):
         """Start one investigation for an open alert; repeated start is idempotent."""
         now = datetime.now(timezone.utc)

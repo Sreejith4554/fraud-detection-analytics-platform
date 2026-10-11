@@ -273,6 +273,27 @@ def create_app(artifact=None, manifest=None, database_url=None):
             content=result,
         )
 
+    @app.get("/investigations/{investigation_id}")
+    async def investigation_detail(investigation_id: UUID):
+        store = database()
+
+        try:
+            result = store.investigation_detail(investigation_id)
+        except Exception:
+            logger.error(json.dumps({"event": "investigation_detail_failed"}))
+            raise HTTPException(
+                status_code=503,
+                detail="Investigation unavailable",
+            ) from None
+
+        if result is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Investigation not found",
+            )
+
+        return result
+
     @app.post("/investigations/{investigation_id}/notes", status_code=201)
     async def add_investigation_note(
         investigation_id: UUID,

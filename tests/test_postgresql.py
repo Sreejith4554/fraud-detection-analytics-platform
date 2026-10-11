@@ -655,3 +655,51 @@ def test_investigation_api_rejects_start_for_resolved_alert(store):
         assert start.json() == {
             "detail": "Resolved alert cannot start an investigation"
         }
+
+
+def test_investigation_detail_returns_ordered_notes(store):
+    app = create_app(database_url=URL)
+
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+        alert_id = created["alert_id"]
+
+        investigation = client.post(
+            f"/alerts/{alert_id}/investigation"
+        ).json()
+        investigation_id = investigation["id"]
+
+        first = client.post(
+            f"/investigations/{investigation_id}/notes",
+            json={"body": "First review note."},
+        ).json()
+        second = client.post(
+            f"/investigations/{investigation_id}/notes",
+            json={"body": "Second review note."},
+        ).json()
+
+        detail = client.get(f"/investigations/{investigation_id}")
+        assert detail.status_code == 200
+
+        body = detail.json()
+        assert body["id"] == investigation_id
+        assert body["alert_id"] == alert_id
+        assert body["status"] == "IN_PROGRESS"
+        assert body["disposition"] is None
+        assert [note["id"] for note in body["notes"]] == [
+            first["id"],
+            second["id"],
+        ]
+        assert [note["body"] for note in body["notes"]] == [
+            "First review note.",
+            "Second review note.",
+        ]
+
+        missing = client.get(
+            "/investigations/00000000-0000-0000-0000-000000000000"
+        )
+        assert missing.status_code == 404
+
+        malformed = client.get("/investigations/not-a-uuid")
+        assert malformed.status_code == 422
+        assert "input" not in str(malformed.json()).lower()
