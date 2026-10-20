@@ -11,6 +11,16 @@ A working end-to-end portfolio proof-of-concept demonstrating how a machine-lear
 
 ---
 
+## Latest verified release — v1.2.0
+
+**[Official release](https://github.com/Sreejith4554/fraud-detection-analytics-platform/releases/tag/v1.2.0)** · **[Technical delivery case study](docs/portfolio-case-study.md)**
+
+Version 1.2.0 adds persisted fraud-review investigations, append-only notes, controlled dispositions, and atomic investigation closure with linked alert resolution. The Streamlit dashboard communicates through the FastAPI service.
+
+**Verification:** 95 local PostgreSQL-backed tests passed (0 failures/skips); post-merge GitHub integration, Docker Compose, and CodeQL checks passed (3/3); revision-3 migration and isolated database restore verified; browser acceptance completed with a synthetic alert and persisted investigation. The original OPEN demonstration alert remained intact.
+
+**Scope:** Portfolio proof-of-concept only; not an authenticated production banking or fraud decision-making system.
+
 ## What this project demonstrates
 
 This project goes beyond training a machine-learning model in a notebook. It treats the model as one component in a broader software-delivery system.
@@ -115,9 +125,9 @@ Transactions can pass through the FastAPI inference service, receive a model sco
 
 ![Fraud Detection and Analytics Delivery Platform dashboard showing processed transactions, review flags, stored alerts, and model-score distribution](docs/images/dashboard-overview.png)
 
-*Local portfolio demonstration with 104 persisted predictions. Validation-partition replay records were selected sequentially without using ground-truth labels. One explicitly synthetic, out-of-distribution stress input was used to exercise the alert path. These records are not real financial transactions.*
+*Historical local portfolio demonstration screenshot with 104 persisted predictions. Validation-partition replay records were selected sequentially without using ground-truth labels. One explicitly synthetic, out-of-distribution stress input was used to exercise the alert path. These records are not real financial transactions.*
 
-The dashboard reports:
+The historical screenshot reports:
 
 - **104** persisted predictions
 - **1** prediction flagged for review
@@ -245,7 +255,7 @@ The hosted integration and Compose pipeline has been successfully executed on Gi
 The latest complete local integration run executed the full suite against a dedicated PostgreSQL test database:
 
 ```text
-81 passed
+95 passed
 0 failed
 0 skipped
 ```
@@ -764,6 +774,7 @@ Key records include:
 - [Container delivery](docs/phase-8-9-containers.md)
 - [CI pipeline](docs/phase-10-ci.md)
 - [Release readiness](docs/release-readiness.md)
+- [Technical delivery case study](docs/portfolio-case-study.md)
 - [Compose incident record](docs/incident-compose-network.md)
 - [Machine-readable evidence](docs/evidence)
 
