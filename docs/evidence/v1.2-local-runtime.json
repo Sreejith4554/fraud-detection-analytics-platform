@@ -1,0 +1,51 @@
+﻿{
+  "evidence_type": "v1.2_local_runtime_verification",
+  "verified_on": "2026-10-13",
+  "release": "1.2.0",
+  "result": "PASS",
+  "image": "fraud-platform:local",
+  "runtime": {
+    "database": {
+      "status": "healthy",
+      "schema_revision": 3,
+      "postgresql_image": "postgres:16.15-bookworm@sha256:efedf3595f1d6f415c08568ba171029bf54052e754cc9f030e3f2412b21f3d67"
+    },
+    "migration": {
+      "status": "Exited (0)"
+    },
+    "api": {
+      "status": "healthy",
+      "health_release": "1.2.0",
+      "scoring_ready": true,
+      "prediction_ready": true
+    },
+    "dashboard": {
+      "status": "healthy"
+    }
+  },
+  "preserved_demo_state": {
+    "open_alerts": 1,
+    "alert_id": "a0450a76-d6c5-4a72-bb46-8021ab90c747",
+    "prediction_id": "4880d324-aa9a-4009-94ad-2bd221b2f607",
+    "alert_status": "OPEN",
+    "resolved_at": null,
+    "source": "SYNTHETIC",
+    "investigation_lookup_http_status": 404,
+    "investigation_lookup_response": {
+      "detail": "Investigation not found"
+    }
+  },
+  "restart_verification": {
+    "api_restarted_healthy": true,
+    "dashboard_restarted_healthy": true,
+    "persisted_open_alert_recovered": true
+  },
+  "automated_regression": {
+    "passed": 95,
+    "failed": 0,
+    "skipped": 0,
+    "known_warnings": 1
+  },
+  "lint": "PASS",
+  "limitation": "This artifact records local v1.2.0 Compose runtime and restart verification. The preserved OPEN alert was not mutated to exercise a live investigation because the investigation lifecycle is covered by isolated PostgreSQL, API, and Streamlit automated tests. Hosted CI, release-specific CodeQL, browser visual verification of the v1.2 investigation interface, and public deployment are separate gates."
+}

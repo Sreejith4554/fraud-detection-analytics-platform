@@ -1,4 +1,4 @@
-# Proposed architecture — not yet integrated
+# Platform architecture
 ## System context
 ```mermaid
 flowchart TD
@@ -14,11 +14,13 @@ flowchart TD
  UI[Streamlit dashboard] --> API[FastAPI validation and routes]
  API --> Model[Trusted scikit-learn pipeline]
  Model --> Decision[Threshold decision]
- Decision --> Repo[Atomic persistence service]
+ Decision --> Repo[Transactional persistence service]
  Repo --> DB[(PostgreSQL)]
  API --> Logs[JSON logs and metrics]
- UI --> Read[API history and aggregates]
+ UI --> Read[API history, alerts, investigations and aggregates]
  Read --> DB
+ UI --> Review[Human investigation workflow]
+ Review --> API
 ```
 ## Request data flow
 ```mermaid
@@ -44,4 +46,12 @@ flowchart TD
  Images --> Hosted[Approved hosting environment]
  Hosted --> Managed[(Managed PostgreSQL)]
 ```
-Current implementation: health/readiness and validation scaffold, data pipeline and offline trained model. API-to-model scoring is tested via /score; PostgreSQL persistence via /predict and conditional alert recording are tested. Dashboard consumes real API analytics/history/alerts; hosted deployment remains proposed. Hosted path requires separate approval. The training pipeline runs offline, never in a prediction request. Proposed database tables: transactions(id UUID, source, schema_version, time, amount, components, created_at); predictions(id UUID, transaction_id FK, probability CHECK 0..1, threshold, risk, decision, model_version, created_at); alerts(id UUID, prediction_id UNIQUE FK, status, created_at). Model metadata is a versioned JSON manifest initially; a separate model registry service is unnecessary.
+Current implementation: health/readiness and validation, offline model training, API-to-model scoring, transactional PostgreSQL persistence, conditional alert creation, and the human investigation workflow are implemented and tested. The Streamlit dashboard consumes API-backed analytics, prediction history, alerts, and persisted investigations. The training pipeline runs offline and never executes inside a prediction request.
+
+The implemented PostgreSQL schema is revision 3. It contains transactions, predictions, alerts, investigations, and investigation_notes. Each alert can have at most one investigation. Investigation notes are append-only. Closing an investigation records a controlled disposition (CONFIRMED_FRAUD, FALSE_POSITIVE, or INCONCLUSIVE) and resolves the associated alert atomically. Direct alert resolution is rejected while an investigation is active.
+
+Investigation dispositions are human review outcomes in this portfolio proof-of-concept. They are not model labels and are not treated as independently established ground truth. Authentication, analyst identity, and assignment are not implemented in Phase 12 and are deferred to the authentication and RBAC phase.
+
+Schema migrations are versioned and transactional, and application readiness requires the expected schema revision. Model metadata remains a versioned JSON manifest; a separate model registry service is unnecessary for this proof-of-concept.
+
+Local Docker Compose deployment is implemented. Hosted deployment remains proposed and requires separate approval.

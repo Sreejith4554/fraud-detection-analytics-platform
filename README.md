@@ -25,7 +25,10 @@ The implemented platform demonstrates:
 - PostgreSQL persistence
 - explicit database schema migration
 - transactional prediction and alert creation
-- Streamlit analytics and review views
+- persisted human investigation lifecycle
+- append-only investigation notes
+- controlled investigation dispositions
+- Streamlit analytics and investigation workflow
 - Docker Compose deployment
 - health and readiness checks
 - database restart and persistence verification
@@ -61,9 +64,11 @@ Data validation / feature preparation
      transactions           health/readiness
      predictions            operational metrics
      alerts
+     investigations
+     investigation_notes
           |
           v
- Streamlit analytics dashboard
+ Streamlit analytics / investigation dashboard
 ```
 
 The containerized runtime is:
@@ -122,7 +127,7 @@ The dashboard reports:
 - processing activity
 - recent prediction history
 
-The flagged share is deliberately **not described as a fraud rate** because runtime demonstration records do not contain human-reviewed fraud outcomes.
+The flagged share is deliberately **not described as a fraud rate**. It measures the share of demonstration predictions that crossed the configured review threshold. Investigation dispositions, where present, are human review outcomes in this proof-of-concept and are not treated as independently established fraud ground truth.
 
 ### Persisted review alert
 
@@ -396,6 +401,9 @@ Implemented functionality includes:
 - prediction history
 - aggregate analytics
 - persisted alert history
+- persisted investigation lifecycle
+- append-only investigation notes
+- controlled human-review dispositions
 
 Key endpoints include:
 
@@ -408,6 +416,12 @@ POST /predict
 GET  /predictions
 GET  /analytics
 GET  /alerts
+POST /alerts/{alert_id}/resolve
+GET  /alerts/{alert_id}/investigation
+POST /alerts/{alert_id}/investigation
+GET  /investigations/{investigation_id}
+POST /investigations/{investigation_id}/notes
+POST /investigations/{investigation_id}/close
 ```
 
 With PostgreSQL configured, `/predict` performs real model inference and persists the resulting transaction/prediction state.
@@ -429,6 +443,9 @@ The persistence layer includes:
 - prediction records
 - model provenance
 - alert records
+- investigation records
+- append-only investigation notes
+- controlled investigation dispositions
 - transactional write behavior
 - rollback verification
 - prediction history
@@ -474,7 +491,11 @@ Displays persisted alerts with:
 - model version
 - source provenance
 
-The queue supports OPEN and RESOLVED views. OPEN alerts can be marked RESOLVED through the API-backed dashboard workflow; this records lifecycle state only and does not establish whether fraud occurred. Analyst assignment, investigation notes, richer disposition, authentication/authorization, and analyst audit history are not implemented.
+The queue supports OPEN and RESOLVED alert views. For an OPEN alert, a reviewer can start a persisted investigation, append investigation notes, select a controlled disposition, and close the investigation through the API-backed dashboard workflow. Closing an investigation atomically resolves its associated alert. Direct alert resolution remains available when no active investigation exists.
+
+The controlled dispositions are CONFIRMED_FRAUD, FALSE_POSITIVE, and INCONCLUSIVE. They represent human review outcomes in this portfolio proof-of-concept; they are not model labels or independently established ground truth.
+
+Authentication/authorization, analyst identity, analyst assignment, and analyst audit history are not implemented in this phase.
 
 ### Submit demo
 
@@ -764,7 +785,7 @@ Inference contracts, input validation, operational endpoints, model serving, err
 
 ### 3. Data & integration
 
-PostgreSQL schema, migration, transactional persistence, prediction history, analytics, and alerts.
+PostgreSQL schema, migration, transactional persistence, prediction history, analytics, alerts, investigations, and investigation notes.
 
 ### 4. Platform & DevOps
 
@@ -772,7 +793,7 @@ Docker, Compose, runtime hardening, CI/CD gates, dependency auditing, CodeQL, re
 
 ### 5. Product & analytics
 
-Dashboard design, operational visibility, review queue, demonstration workflows, and portfolio communication.
+Dashboard design, operational visibility, review queue, persisted investigation workflow, demonstration workflows, and portfolio communication.
 
 The repository intentionally preserves decisions, verification evidence, and incident documentation alongside the implementation to demonstrate not only **what was built**, but also **how dependencies, quality, risk, and release readiness were managed**.
 
@@ -790,6 +811,11 @@ The current proof-of-concept verifies:
 - API schema validation
 - PostgreSQL persistence
 - transactional prediction and alert behavior
+- persisted investigation lifecycle
+- append-only investigation notes
+- controlled human-review dispositions
+- atomic investigation closure and alert resolution
+- investigation state persistence across dashboard refresh
 - rollback on controlled database failure
 - aggregate analytics
 - Streamlit application functionality
@@ -818,7 +844,9 @@ This project deliberately does **not** claim:
 - production financial decision use
 - calibrated real-world fraud probabilities
 - authentication or authorization
-- analyst case-management functionality
+- analyst identity, assignment, or authenticated attribution
+- full production case-management functionality
+- independently established fraud ground truth from investigation dispositions
 - production-scale concurrency
 - production load or stress testing
 - production high availability
@@ -835,8 +863,9 @@ Those would require additional requirements, infrastructure, security engineerin
 The current architecture provides a foundation for future work such as:
 
 - authentication and role-based access control
-- analyst acknowledgement and case-management workflow
-- alert disposition and audit history
+- analyst identity and assignment
+- authenticated analyst audit history
+- richer case-management workflow
 - production-style observability
 - structured performance/load testing
 - cloud deployment
