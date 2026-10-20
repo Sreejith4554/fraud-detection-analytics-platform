@@ -1,0 +1,57 @@
+﻿{
+    "evidence_type":  "schema_migration_verification",
+    "verified_on":  "2026-10-13",
+    "database":  "fraud_demo",
+    "migration":  {
+                      "from_revision":  2,
+                      "to_revision":  3,
+                      "result":  "PASS",
+                      "migration_output":  "PostgreSQL schema revision 3 installed/verified"
+                  },
+    "pre_migration_state":  {
+                                "transactions":  106,
+                                "predictions":  106,
+                                "alerts":  1,
+                                "alert_status":  {
+                                                     "OPEN":  1
+                                                 },
+                                "preservation_alert_id":  "a0450a76-d6c5-4a72-bb46-8021ab90c747",
+                                "preservation_prediction_id":  "4880d324-aa9a-4009-94ad-2bd221b2f607"
+                            },
+    "backup":  {
+                   "path":  "docs/evidence/fraud_demo_pre_v1.2_rev3.dump",
+                   "format":  "PostgreSQL custom archive",
+                   "postgresql_version":  "16.15",
+                   "sha256":  "D67895686F146338E9932FE4F1D894D43450C2CA6C656FE6B5F369521AACF968",
+                   "pg_restore_archive_listing":  "PASS",
+                   "off_container_copy_revalidated":  true,
+                   "disposable_restore_verification":  "PASS",
+                   "restored_schema_revision":  2,
+                   "restored_transactions":  106,
+                   "restored_predictions":  106,
+                   "restored_alerts":  1,
+                   "restored_open_alerts":  1
+               },
+    "post_migration_state":  {
+                                 "schema_revision":  3,
+                                 "transactions":  106,
+                                 "predictions":  106,
+                                 "alerts":  1,
+                                 "alert_status":  {
+                                                      "OPEN":  1
+                                                  },
+                                 "investigations":  0,
+                                 "investigation_notes":  0,
+                                 "preservation_alert_status":  "OPEN",
+                                 "preservation_alert_resolved_at":  null
+                             },
+    "verification":  {
+                         "existing_transaction_count_preserved":  true,
+                         "existing_prediction_count_preserved":  true,
+                         "existing_alert_count_preserved":  true,
+                         "existing_open_alert_preserved":  true,
+                         "historical_investigations_invented":  false,
+                         "historical_investigation_notes_invented":  false
+                     },
+    "limitation":  "This artifact verifies the revision-2 to revision-3 schema migration, data preservation, and local recovery of the pre-migration backup into an isolated disposable PostgreSQL database. This is not production disaster-recovery validation. Investigation lifecycle execution against the live demonstration database, rebuilt Compose runtime verification, hosted CI, and release-specific CodeQL verification are separate gates."
+}

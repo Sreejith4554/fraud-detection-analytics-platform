@@ -12,14 +12,20 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from api.schemas import PredictionResponse, ScoreResponse, TransactionInput
+from api.schemas import (
+    InvestigationCloseInput,
+    InvestigationNoteInput,
+    PredictionResponse,
+    ScoreResponse,
+    TransactionInput,
+)
 from api.services.inference import InferenceService
 from database.config import database_url as configured_database_url
 from database.schema_version import LATEST_SCHEMA_REVISION
 from database.store import Store
 
 ROOT = Path(__file__).resolve().parents[1]
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 DISCLAIMER = "PORTFOLIO PROOF-OF-CONCEPT. Not for real financial decisions."
 SCORE_NOTE = "Uncalibrated model score; not an estimate of real-world fraud certainty."
 logger = logging.getLogger("fraud_api")
@@ -213,6 +219,16 @@ def create_app(artifact=None, manifest=None, database_url=None):
         store = database()
         try:
             result = store.resolve_alert(alert_id)
+        except ValueError as exc:
+            if "active investigation" in str(exc):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Alert has an active investigation",
+                ) from None
+            logger.error(json.dumps({"event": "alert_resolution_failed"}))
+            raise HTTPException(
+                status_code=503, detail="Alert could not be resolved"
+            ) from None
         except Exception:
             logger.error(json.dumps({"event": "alert_resolution_failed"}))
             raise HTTPException(
@@ -221,6 +237,153 @@ def create_app(artifact=None, manifest=None, database_url=None):
 
         if result is None:
             raise HTTPException(status_code=404, detail="Alert not found")
+
+        return result
+
+    @app.get("/alerts/{alert_id}/investigation")
+    async def investigation_for_alert(alert_id: UUID):
+        store = database()
+
+        try:
+            result = store.investigation_for_alert(alert_id)
+        except Exception:
+            logger.error(
+                json.dumps({"event": "investigation_lookup_failed"})
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Investigation unavailable",
+            ) from None
+
+        if result is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Investigation not found",
+            )
+
+        return result
+
+    @app.post("/alerts/{alert_id}/investigation")
+    async def start_investigation(alert_id: UUID):
+        store = database()
+
+        try:
+            existing = store.investigation_for_alert(alert_id)
+            result = store.start_investigation(alert_id)
+        except ValueError as exc:
+            if "resolved alert" in str(exc):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Resolved alert cannot start an investigation",
+                ) from None
+            logger.error(json.dumps({"event": "investigation_start_failed"}))
+            raise HTTPException(
+                status_code=503,
+                detail="Investigation could not be started",
+            ) from None
+        except Exception:
+            logger.error(json.dumps({"event": "investigation_start_failed"}))
+            raise HTTPException(
+                status_code=503,
+                detail="Investigation could not be started",
+            ) from None
+
+        if result is None:
+            raise HTTPException(status_code=404, detail="Alert not found")
+
+        return JSONResponse(
+            status_code=200 if existing is not None else 201,
+            content=result,
+        )
+
+    @app.get("/investigations/{investigation_id}")
+    async def investigation_detail(investigation_id: UUID):
+        store = database()
+
+        try:
+            result = store.investigation_detail(investigation_id)
+        except Exception:
+            logger.error(json.dumps({"event": "investigation_detail_failed"}))
+            raise HTTPException(
+                status_code=503,
+                detail="Investigation unavailable",
+            ) from None
+
+        if result is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Investigation not found",
+            )
+
+        return result
+
+    @app.post("/investigations/{investigation_id}/notes", status_code=201)
+    async def add_investigation_note(
+        investigation_id: UUID,
+        note: InvestigationNoteInput,
+    ):
+        store = database()
+
+        try:
+            result = store.add_investigation_note(
+                investigation_id,
+                note.body,
+            )
+        except ValueError as exc:
+            if "closed investigation" in str(exc):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Closed investigation cannot accept notes",
+                ) from None
+            logger.error(json.dumps({"event": "investigation_note_failed"}))
+            raise HTTPException(
+                status_code=503,
+                detail="Investigation note could not be added",
+            ) from None
+        except Exception:
+            logger.error(json.dumps({"event": "investigation_note_failed"}))
+            raise HTTPException(
+                status_code=503,
+                detail="Investigation note could not be added",
+            ) from None
+
+        if result is None:
+            raise HTTPException(status_code=404, detail="Investigation not found")
+
+        return result
+
+    @app.post("/investigations/{investigation_id}/close")
+    async def close_investigation(
+        investigation_id: UUID,
+        closure: InvestigationCloseInput,
+    ):
+        store = database()
+
+        try:
+            result = store.close_investigation(
+                investigation_id,
+                closure.disposition,
+            )
+        except ValueError as exc:
+            if "different disposition" in str(exc):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Investigation already closed with a different disposition",
+                ) from None
+            logger.error(json.dumps({"event": "investigation_close_failed"}))
+            raise HTTPException(
+                status_code=503,
+                detail="Investigation could not be closed",
+            ) from None
+        except Exception:
+            logger.error(json.dumps({"event": "investigation_close_failed"}))
+            raise HTTPException(
+                status_code=503,
+                detail="Investigation could not be closed",
+            ) from None
+
+        if result is None:
+            raise HTTPException(status_code=404, detail="Investigation not found")
 
         return result
 

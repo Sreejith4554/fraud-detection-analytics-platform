@@ -12,11 +12,15 @@ st.set_page_config(page_title="Fraud Analytics | Delivery Platform", page_icon="
 BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 
-def call(path, payload=None):
+def call(path, payload=None, method="GET"):
     with httpx.Client(timeout=10) as client:
-        response = (
-            client.get(BASE + path) if payload is None else client.post(BASE + path, json=payload)
-        )
+        if method == "GET":
+            response = client.get(BASE + path)
+        elif method == "POST":
+            response = client.post(BASE + path, json=payload)
+        else:
+            raise ValueError(f"Unsupported HTTP method: {method}")
+
         response.raise_for_status()
         return response.json()
 
@@ -57,7 +61,8 @@ columns[1].metric("Flagged for review", analytics["high_risk"])
 columns[2].metric("Flagged share", f"{analytics['flagged_share']:.2%}")
 columns[3].metric("Stored alerts", analytics["alerts"])
 st.caption(
-    "Flagged share is not the fraud rate. No human-reviewed ground-truth outcomes are collected."
+    "Flagged share is not the fraud rate. Investigation dispositions are "
+    "human review outcomes and are not treated as independent ground truth."
 )
 overview, queue, submit, operations = st.tabs(
     ["Overview", "Review queue", "Submit demo", "Model & operations"]
@@ -92,18 +97,21 @@ with overview:
     st.dataframe(pd.DataFrame(recent["items"]), hide_index=True, width="stretch")
     st.caption("Input sources: " + json.dumps(analytics["sources"]))
 with queue:
-    st.subheader("Persisted review alerts")
+    st.subheader("Investigation queue")
     st.caption(
-        "Demonstration investigation queue. Alerts can be marked RESOLVED, "
-        "but analyst assignment, notes, authentication, and case management "
-        "are not implemented."
+        "Review model-generated alerts through a human investigation workflow. "
+        "Investigation dispositions are analyst review outcomes, not model labels "
+        "or ground-truth fraud classifications. Authentication and analyst "
+        "identity are not implemented in this phase."
     )
+
     alert_status = st.radio(
         "Alert status",
         ["OPEN", "RESOLVED"],
         horizontal=True,
     )
     offset = st.number_input("Alert offset", min_value=0, step=20, value=0)
+
     try:
         alerts = call(
             f"/alerts?status={alert_status}&limit=20&offset={offset}"
@@ -112,34 +120,177 @@ with queue:
             f"{alerts['total']} {alert_status.lower()} alerts total - "
             "up to 20 on this page"
         )
+
         if alerts["items"]:
             st.dataframe(
                 pd.DataFrame(alerts["items"]),
                 hide_index=True,
                 width="stretch",
             )
+
             if alert_status == "OPEN":
                 st.caption(
-                    "Resolving an alert records its lifecycle state only; "
-                    "it does not establish whether fraud occurred."
+                    "Start an investigation to record review notes and a "
+                    "controlled human disposition. Direct resolution remains "
+                    "available for alerts without an active investigation."
                 )
+
                 for alert in alerts["items"]:
-                    if st.button(
-                        f"Resolve alert {alert['id']}",
-                        key=f"resolve-{alert['id']}",
-                    ):
+                    alert_id = alert["id"]
+                    investigation_id = None
+                    investigation_lookup_failed = False
+
+                    try:
+                        existing = call(
+                            f"/alerts/{alert_id}/investigation"
+                        )
+                        investigation_id = existing["id"]
+                    except httpx.HTTPStatusError as exc:
+                        if exc.response.status_code != 404:
+                            investigation_lookup_failed = True
+                            st.error(
+                                "Investigation lookup unavailable. Refresh "
+                                "after checking the API."
+                            )
+                    except (httpx.HTTPError, ValueError):
+                        investigation_lookup_failed = True
+                        st.error(
+                            "Investigation lookup unavailable. Refresh "
+                            "after checking the API."
+                        )
+
+                    st.divider()
+                    st.write(f"Alert {alert_id}")
+
+                    if investigation_lookup_failed:
+                        continue
+
+                    if investigation_id is None:
+                        if st.button(
+                            f"Start investigation {alert_id}",
+                            key=f"start-investigation-{alert_id}",
+                        ):
+                            try:
+                                call(
+                                    f"/alerts/{alert_id}/investigation",
+                                    {},
+                                    method="POST",
+                                )
+                                st.rerun()
+                            except (httpx.HTTPError, ValueError):
+                                st.error(
+                                    "Investigation could not be started. "
+                                    "Refresh and verify the alert state."
+                                )
+
+                        if st.button(
+                            f"Resolve alert {alert_id}",
+                            key=f"resolve-{alert_id}",
+                        ):
+                            try:
+                                call(
+                                    f"/alerts/{alert_id}/resolve",
+                                    {},
+                                    method="POST",
+                                )
+                                st.rerun()
+                            except (httpx.HTTPError, ValueError):
+                                st.error(
+                                    "Alert resolution failed. Refresh and verify "
+                                    "the alert state before retrying."
+                                )
+                    else:
                         try:
-                            call(f"/alerts/{alert['id']}/resolve", {})
-                            st.rerun()
+                            investigation = call(
+                                f"/investigations/{investigation_id}"
+                            )
                         except (httpx.HTTPError, ValueError):
                             st.error(
-                                "Alert resolution failed. Refresh and verify "
-                                "the alert state before retrying."
+                                "Investigation details unavailable. Refresh and "
+                                "verify the investigation state."
+                            )
+                            continue
+
+                        st.write(
+                            f"Investigation {investigation_id} - "
+                            f"{investigation['status']}"
+                        )
+
+                        if investigation["notes"]:
+                            st.caption("Investigation notes")
+                            for note in investigation["notes"]:
+                                st.write(
+                                    f"{note['created_at']} - {note['body']}"
+                                )
+                        else:
+                            st.caption("No investigation notes recorded yet.")
+
+                        if investigation["status"] == "IN_PROGRESS":
+                            note_body = st.text_area(
+                                f"Investigation note {investigation_id}",
+                                key=f"note-{investigation_id}",
+                                max_chars=4000,
+                            )
+
+                            if st.button(
+                                f"Add note {investigation_id}",
+                                key=f"add-note-{investigation_id}",
+                            ):
+                                try:
+                                    call(
+                                        f"/investigations/{investigation_id}/notes",
+                                        {"body": note_body},
+                                        method="POST",
+                                    )
+                                    st.rerun()
+                                except (httpx.HTTPError, ValueError):
+                                    st.error(
+                                        "Note could not be added. Enter a "
+                                        "non-empty note and verify the "
+                                        "investigation is still open."
+                                    )
+
+                            disposition = st.selectbox(
+                                f"Disposition {investigation_id}",
+                                [
+                                    "INCONCLUSIVE",
+                                    "FALSE_POSITIVE",
+                                    "CONFIRMED_FRAUD",
+                                ],
+                                key=f"disposition-{investigation_id}",
+                            )
+                            st.caption(
+                                "Disposition records the human review outcome; "
+                                "it does not retrain the model or establish "
+                                "independent ground truth."
+                            )
+
+                            if st.button(
+                                f"Close investigation {investigation_id}",
+                                key=f"close-{investigation_id}",
+                            ):
+                                try:
+                                    call(
+                                        f"/investigations/{investigation_id}/close",
+                                        {"disposition": disposition},
+                                        method="POST",
+                                    )
+                                    st.rerun()
+                                except (httpx.HTTPError, ValueError):
+                                    st.error(
+                                        "Investigation could not be closed. "
+                                        "Refresh and verify its current state."
+                                    )
+                        else:
+                            st.write(
+                                "Disposition: "
+                                + str(investigation["disposition"])
                             )
         else:
             st.info(f"No {alert_status.lower()} alerts on this page.")
     except (httpx.HTTPError, ValueError):
         st.error("Alert history unavailable. Refresh after checking the API.")
+
 with submit:
     st.subheader("Submit a synthetic transaction")
     st.caption(
@@ -161,7 +312,9 @@ with submit:
                 "time": elapsed,
                 "v": vector,
             }
-            st.session_state["last_prediction"] = call("/predict", payload)
+            st.session_state["last_prediction"] = call(
+                "/predict", payload, method="POST"
+            )
             st.rerun()
         except (ValueError, httpx.HTTPError):
             st.error(
@@ -232,7 +385,7 @@ with submit:
                 "v": stress_vector,
             }
             st.session_state["last_stress_prediction"] = call(
-                "/predict", stress_payload
+                "/predict", stress_payload, method="POST"
             )
             st.rerun()
         except (ValueError, httpx.HTTPError):

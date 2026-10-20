@@ -11,7 +11,13 @@ def current_revision(engine):
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
     if "schema_revision" not in table_names:
-        managed_tables = {"transactions", "predictions", "alerts"}
+        managed_tables = {
+            "transactions",
+            "predictions",
+            "alerts",
+            "investigations",
+            "investigation_notes",
+        }
         existing_managed_tables = sorted(table_names & managed_tables)
         if existing_managed_tables:
             raise ValueError(
@@ -48,6 +54,53 @@ def migrate_1_to_2(engine):
         conn.execute(text("UPDATE schema_revision SET version = 2"))
 
 
+def migrate_2_to_3(engine):
+    """Add investigation workflow tables without inventing historical activity."""
+    with engine.begin() as conn:
+        version = conn.execute(select(revision.c.version)).scalar_one()
+        if version != 2:
+            raise ValueError(f"Expected schema revision 2, found {version}")
+
+        conn.execute(
+            text(
+                "CREATE TABLE investigations ("
+                "id UUID PRIMARY KEY, "
+                "alert_id UUID NOT NULL UNIQUE REFERENCES alerts(id), "
+                "status VARCHAR(20) NOT NULL, "
+                "disposition VARCHAR(30), "
+                "created_at TIMESTAMPTZ NOT NULL, "
+                "updated_at TIMESTAMPTZ NOT NULL, "
+                "closed_at TIMESTAMPTZ, "
+                "CHECK (status IN ('IN_PROGRESS','CLOSED')), "
+                "CHECK (disposition IS NULL OR "
+                "disposition IN ('CONFIRMED_FRAUD','FALSE_POSITIVE','INCONCLUSIVE')), "
+                "CHECK ("
+                "(status='IN_PROGRESS' AND disposition IS NULL AND closed_at IS NULL) OR "
+                "(status='CLOSED' AND disposition IS NOT NULL AND closed_at IS NOT NULL)"
+                ")"
+                ")"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE investigation_notes ("
+                "id UUID PRIMARY KEY, "
+                "investigation_id UUID NOT NULL REFERENCES investigations(id), "
+                "body TEXT NOT NULL, "
+                "created_at TIMESTAMPTZ NOT NULL, "
+                "CHECK (length(btrim(body)) > 0)"
+                ")"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX ix_investigation_notes_investigation_id "
+                "ON investigation_notes (investigation_id)"
+            )
+        )
+        conn.execute(text("UPDATE schema_revision SET version = 3"))
+
+
 def migrate(engine):
     """Upgrade an installed schema to the latest supported revision."""
     version = current_revision(engine)
@@ -67,6 +120,10 @@ def migrate(engine):
     if version == 1:
         migrate_1_to_2(engine)
         version = 2
+
+    if version == 2:
+        migrate_2_to_3(engine)
+        version = 3
 
     if version != LATEST_SCHEMA_REVISION:
         raise ValueError(f"Unsupported schema revision {version}")

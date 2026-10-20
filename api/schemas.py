@@ -35,3 +35,13 @@ class PredictionResponse(ScoreResponse):
     transaction_id: str
     alert_id: str | None
     created_at: str
+
+
+class InvestigationNoteInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    body: Annotated[str, Field(min_length=1, max_length=4000, pattern=r".*\S.*")]
+
+
+class InvestigationCloseInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    disposition: Literal["CONFIRMED_FRAUD", "FALSE_POSITIVE", "INCONCLUSIVE"]

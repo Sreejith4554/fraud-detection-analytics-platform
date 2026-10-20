@@ -9,7 +9,14 @@ from sqlalchemy import event, func, select, text
 from sqlalchemy.engine import make_url
 
 from api.main import ROOT, create_app
-from database.store import Store, alerts, install, predictions, transactions
+from database.store import (
+    Store,
+    alerts,
+    install,
+    investigations,
+    predictions,
+    transactions,
+)
 
 URL = os.getenv("FRAUD_TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="Dedicated PostgreSQL test database required")
@@ -21,7 +28,7 @@ def store():
     service = Store(URL)
     install(service.engine)
     with service.engine.begin() as conn:
-        conn.execute(text("TRUNCATE alerts, predictions, transactions"))
+        conn.execute(text("TRUNCATE investigation_notes, investigations, alerts, predictions, transactions"))
     yield service
     service.engine.dispose()
 
@@ -112,13 +119,13 @@ def test_database_unavailable_returns_no_success():
 
 def test_schema_revision_gate(store):
     with store.engine.begin() as conn:
-        conn.execute(text("UPDATE schema_revision SET version=3"))
+        conn.execute(text("UPDATE schema_revision SET version=4"))
     try:
         with TestClient(create_app(database_url=URL)) as client:
             assert client.get("/ready").status_code == 503
     finally:
         with store.engine.begin() as conn:
-            conn.execute(text("UPDATE schema_revision SET version=2"))
+            conn.execute(text("UPDATE schema_revision SET version=3"))
 
 
 def test_analytics_empty_database(store):
@@ -395,6 +402,553 @@ def test_streamlit_review_queue_resolves_alert_through_http(store, monkeypatch):
             alert_id in str(dataframe.value)
             for dataframe in app.dataframe
         )
+    finally:
+        process.terminate()
+        process.wait(timeout=10)
+
+def test_investigation_lifecycle_is_atomic_and_idempotent(store):
+    app = create_app(database_url=URL)
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+
+    alert_id = created["alert_id"]
+
+    investigation = store.start_investigation(alert_id)
+    assert investigation is not None
+    assert investigation["alert_id"] == alert_id
+    assert investigation["status"] == "IN_PROGRESS"
+    assert investigation["disposition"] is None
+    assert investigation["closed_at"] is None
+    assert investigation["created_at"] == investigation["updated_at"]
+
+    investigation_id = investigation["id"]
+    created_at = investigation["created_at"]
+
+    repeated = store.start_investigation(alert_id)
+    assert repeated["id"] == investigation_id
+    assert repeated["created_at"] == created_at
+    assert repeated["status"] == "IN_PROGRESS"
+
+    note = store.add_investigation_note(
+        investigation_id,
+        "Reviewed transaction context and model evidence.",
+    )
+    assert note is not None
+    assert note["investigation_id"] == investigation_id
+    assert note["body"] == "Reviewed transaction context and model evidence."
+    assert note["created_at"] is not None
+
+    closed = store.close_investigation(investigation_id, "FALSE_POSITIVE")
+    assert closed is not None
+    assert closed["id"] == investigation_id
+    assert closed["status"] == "CLOSED"
+    assert closed["disposition"] == "FALSE_POSITIVE"
+    assert closed["closed_at"] is not None
+    assert closed["updated_at"] == closed["closed_at"]
+
+    with store.engine.connect() as conn:
+        alert = conn.execute(
+            select(
+                alerts.c.status,
+                alerts.c.updated_at,
+                alerts.c.resolved_at,
+            ).where(alerts.c.id == alert_id)
+        ).one()
+
+    assert alert.status == "RESOLVED"
+    assert alert.resolved_at.isoformat() == closed["closed_at"]
+    assert alert.updated_at.isoformat() == closed["closed_at"]
+
+    first_closed_at = closed["closed_at"]
+    repeated_close = store.close_investigation(
+        investigation_id,
+        "FALSE_POSITIVE",
+    )
+    assert repeated_close["closed_at"] == first_closed_at
+    assert repeated_close["updated_at"] == first_closed_at
+    assert repeated_close["disposition"] == "FALSE_POSITIVE"
+
+    with pytest.raises(ValueError, match="different disposition"):
+        store.close_investigation(investigation_id, "INCONCLUSIVE")
+
+    with pytest.raises(ValueError, match="closed investigation"):
+        store.add_investigation_note(investigation_id, "Too late")
+
+    assert (
+        store.start_investigation("00000000-0000-0000-0000-000000000000")
+        is None
+    )
+    assert (
+        store.add_investigation_note(
+            "00000000-0000-0000-0000-000000000000",
+            "Missing investigation",
+        )
+        is None
+    )
+    assert (
+        store.close_investigation(
+            "00000000-0000-0000-0000-000000000000",
+            "INCONCLUSIVE",
+        )
+        is None
+    )
+
+
+def test_investigation_rejects_resolved_alert_and_invalid_input(store):
+    app = create_app(database_url=URL)
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+
+    alert_id = created["alert_id"]
+    assert store.resolve_alert(alert_id)["status"] == "RESOLVED"
+
+    with pytest.raises(ValueError, match="resolved alert"):
+        store.start_investigation(alert_id)
+
+    app = create_app(database_url=URL)
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+
+    investigation = store.start_investigation(created["alert_id"])
+
+    with pytest.raises(ValueError, match="blank"):
+        store.add_investigation_note(investigation["id"], "   ")
+
+    with pytest.raises(ValueError, match="Unsupported investigation disposition"):
+        store.close_investigation(investigation["id"], "MODEL_SAYS_FRAUD")
+
+
+def test_active_investigation_prevents_direct_alert_resolution(store):
+    app = create_app(database_url=URL)
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+
+    alert_id = created["alert_id"]
+    investigation = store.start_investigation(alert_id)
+
+    assert investigation["status"] == "IN_PROGRESS"
+
+    with pytest.raises(ValueError, match="active investigation"):
+        store.resolve_alert(alert_id)
+
+    with store.engine.connect() as conn:
+        alert_status = conn.execute(
+            select(alerts.c.status).where(alerts.c.id == alert_id)
+        ).scalar_one()
+
+        investigation_status = conn.execute(
+            select(investigations.c.status).where(
+                investigations.c.id == investigation["id"]
+            )
+        ).scalar_one()
+
+    assert alert_status == "OPEN"
+    assert investigation_status == "IN_PROGRESS"
+
+
+def test_investigation_api_lifecycle_and_conflicts(store):
+    app = create_app(database_url=URL)
+
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+        alert_id = created["alert_id"]
+
+        started = client.post(f"/alerts/{alert_id}/investigation")
+        assert started.status_code == 201
+        investigation = started.json()
+        assert investigation["alert_id"] == alert_id
+        assert investigation["status"] == "IN_PROGRESS"
+        assert investigation["disposition"] is None
+        investigation_id = investigation["id"]
+
+        repeated = client.post(f"/alerts/{alert_id}/investigation")
+        assert repeated.status_code == 200
+        assert repeated.json()["id"] == investigation_id
+
+        direct_resolve = client.post(f"/alerts/{alert_id}/resolve")
+        assert direct_resolve.status_code == 409
+        assert direct_resolve.json() == {
+            "detail": "Alert has an active investigation"
+        }
+
+        note = client.post(
+            f"/investigations/{investigation_id}/notes",
+            json={"body": "Reviewed transaction context and model evidence."},
+        )
+        assert note.status_code == 201
+        assert note.json()["investigation_id"] == investigation_id
+
+        closed = client.post(
+            f"/investigations/{investigation_id}/close",
+            json={"disposition": "FALSE_POSITIVE"},
+        )
+        assert closed.status_code == 200
+        assert closed.json()["status"] == "CLOSED"
+        assert closed.json()["disposition"] == "FALSE_POSITIVE"
+
+        repeated_close = client.post(
+            f"/investigations/{investigation_id}/close",
+            json={"disposition": "FALSE_POSITIVE"},
+        )
+        assert repeated_close.status_code == 200
+        assert repeated_close.json()["closed_at"] == closed.json()["closed_at"]
+
+        changed_disposition = client.post(
+            f"/investigations/{investigation_id}/close",
+            json={"disposition": "INCONCLUSIVE"},
+        )
+        assert changed_disposition.status_code == 409
+
+        late_note = client.post(
+            f"/investigations/{investigation_id}/notes",
+            json={"body": "This must not be accepted."},
+        )
+        assert late_note.status_code == 409
+
+
+def test_investigation_api_missing_resources_and_validation(store):
+    app = create_app(database_url=URL)
+    missing = "00000000-0000-0000-0000-000000000000"
+
+    with TestClient(app) as client:
+        assert client.post(f"/alerts/{missing}/investigation").status_code == 404
+
+        assert client.post(
+            f"/investigations/{missing}/notes",
+            json={"body": "Missing investigation"},
+        ).status_code == 404
+
+        assert client.post(
+            f"/investigations/{missing}/close",
+            json={"disposition": "INCONCLUSIVE"},
+        ).status_code == 404
+
+        malformed = client.post("/alerts/not-a-uuid/investigation")
+        assert malformed.status_code == 422
+        assert "input" not in str(malformed.json()).lower()
+
+        blank = client.post(
+            f"/investigations/{missing}/notes",
+            json={"body": "   "},
+        )
+        assert blank.status_code == 422
+
+        invalid_disposition = client.post(
+            f"/investigations/{missing}/close",
+            json={"disposition": "MODEL_SAYS_FRAUD"},
+        )
+        assert invalid_disposition.status_code == 422
+
+
+def test_investigation_api_rejects_start_for_resolved_alert(store):
+    app = create_app(database_url=URL)
+
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+        alert_id = created["alert_id"]
+
+        resolved = client.post(f"/alerts/{alert_id}/resolve")
+        assert resolved.status_code == 200
+
+        start = client.post(f"/alerts/{alert_id}/investigation")
+        assert start.status_code == 409
+        assert start.json() == {
+            "detail": "Resolved alert cannot start an investigation"
+        }
+
+
+def test_investigation_detail_returns_ordered_notes(store):
+    app = create_app(database_url=URL)
+
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+        alert_id = created["alert_id"]
+
+        investigation = client.post(
+            f"/alerts/{alert_id}/investigation"
+        ).json()
+        investigation_id = investigation["id"]
+
+        first = client.post(
+            f"/investigations/{investigation_id}/notes",
+            json={"body": "First review note."},
+        ).json()
+        second = client.post(
+            f"/investigations/{investigation_id}/notes",
+            json={"body": "Second review note."},
+        ).json()
+
+        detail = client.get(f"/investigations/{investigation_id}")
+        assert detail.status_code == 200
+
+        body = detail.json()
+        assert body["id"] == investigation_id
+        assert body["alert_id"] == alert_id
+        assert body["status"] == "IN_PROGRESS"
+        assert body["disposition"] is None
+        assert [note["id"] for note in body["notes"]] == [
+            first["id"],
+            second["id"],
+        ]
+        assert [note["body"] for note in body["notes"]] == [
+            "First review note.",
+            "Second review note.",
+        ]
+
+        missing = client.get(
+            "/investigations/00000000-0000-0000-0000-000000000000"
+        )
+        assert missing.status_code == 404
+
+        malformed = client.get("/investigations/not-a-uuid")
+        assert malformed.status_code == 422
+        assert "input" not in str(malformed.json()).lower()
+
+def test_streamlit_investigation_workflow_through_http(store, monkeypatch):
+    import subprocess
+    import sys
+    import time
+
+    import httpx
+    from streamlit.testing.v1 import AppTest
+
+    api_app = create_app(database_url=URL)
+    with TestClient(api_app) as client:
+        created = client.post("/predict", json=high_payload(api_app)).json()
+        alert_id = created["alert_id"]
+
+    environment = {**os.environ, "DATABASE_URL": URL}
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "api.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8770",
+            "--no-access-log",
+        ],
+        env=environment,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    monkeypatch.setenv("API_BASE_URL", "http://127.0.0.1:8770")
+
+    try:
+        for _ in range(100):
+            try:
+                if (
+                    httpx.get(
+                        "http://127.0.0.1:8770/ready",
+                        timeout=1,
+                    ).status_code
+                    == 200
+                ):
+                    break
+            except httpx.HTTPError:
+                pass
+            time.sleep(0.1)
+        else:
+            raise AssertionError("Test API not ready")
+
+        app = AppTest.from_file(
+            ROOT / "dashboard/app.py",
+            default_timeout=20,
+        ).run()
+        assert not app.exception
+
+        start = next(
+            button
+            for button in app.button
+            if button.label == f"Start investigation {alert_id}"
+        )
+        start.click().run()
+
+        assert not app.exception
+
+        with store.engine.connect() as conn:
+            investigation = conn.execute(
+                select(investigations).where(
+                    investigations.c.alert_id == alert_id
+                )
+            ).mappings().one()
+
+        investigation_id = str(investigation["id"])
+        assert investigation["status"] == "IN_PROGRESS"
+        assert investigation["disposition"] is None
+
+        note_input = next(
+            area
+            for area in app.text_area
+            if area.label == f"Investigation note {investigation_id}"
+        )
+        note_input.set_value("Reviewed transaction context.")
+
+        add_note = next(
+            button
+            for button in app.button
+            if button.label == f"Add note {investigation_id}"
+        )
+        add_note.click().run()
+
+        assert not app.exception
+
+        detail = store.investigation_detail(investigation_id)
+        assert [note["body"] for note in detail["notes"]] == [
+            "Reviewed transaction context."
+        ]
+
+        disposition = next(
+            control
+            for control in app.selectbox
+            if control.label == f"Disposition {investigation_id}"
+        )
+        app = disposition.set_value("FALSE_POSITIVE").run()
+
+        close = next(
+            button
+            for button in app.button
+            if button.label == f"Close investigation {investigation_id}"
+        )
+        close.click().run()
+
+        assert not app.exception
+
+        detail = store.investigation_detail(investigation_id)
+        assert detail["status"] == "CLOSED"
+        assert detail["disposition"] == "FALSE_POSITIVE"
+        assert detail["closed_at"] is not None
+
+        with store.engine.connect() as conn:
+            alert = conn.execute(
+                select(
+                    alerts.c.status,
+                    alerts.c.resolved_at,
+                ).where(alerts.c.id == alert_id)
+            ).one()
+
+        assert alert.status == "RESOLVED"
+        assert alert.resolved_at is not None
+    finally:
+        process.terminate()
+        process.wait(timeout=10)
+
+
+def test_investigation_lookup_by_alert_api(store):
+    app = create_app(database_url=URL)
+
+    with TestClient(app) as client:
+        created = client.post("/predict", json=high_payload(app)).json()
+        alert_id = created["alert_id"]
+
+        absent = client.get(f"/alerts/{alert_id}/investigation")
+        assert absent.status_code == 404
+        assert absent.json() == {"detail": "Investigation not found"}
+
+        started = client.post(f"/alerts/{alert_id}/investigation")
+        assert started.status_code == 201
+        investigation = started.json()
+
+        lookup = client.get(f"/alerts/{alert_id}/investigation")
+        assert lookup.status_code == 200
+        assert lookup.json()["id"] == investigation["id"]
+        assert lookup.json()["alert_id"] == alert_id
+        assert lookup.json()["status"] == "IN_PROGRESS"
+
+        missing = client.get(
+            "/alerts/00000000-0000-0000-0000-000000000000/investigation"
+        )
+        assert missing.status_code == 404
+        assert missing.json() == {"detail": "Investigation not found"}
+
+        malformed = client.get("/alerts/not-a-uuid/investigation")
+        assert malformed.status_code == 422
+        assert "input" not in str(malformed.json()).lower()
+
+
+def test_streamlit_recovers_persisted_investigation_after_refresh(
+    store,
+    monkeypatch,
+):
+    import subprocess
+    import sys
+    import time
+
+    import httpx
+    from streamlit.testing.v1 import AppTest
+
+    api_app = create_app(database_url=URL)
+    with TestClient(api_app) as client:
+        created = client.post("/predict", json=high_payload(api_app)).json()
+        alert_id = created["alert_id"]
+
+        started = client.post(f"/alerts/{alert_id}/investigation")
+        assert started.status_code == 201
+        investigation_id = started.json()["id"]
+
+    environment = {**os.environ, "DATABASE_URL": URL}
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "api.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8771",
+            "--no-access-log",
+        ],
+        env=environment,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    monkeypatch.setenv("API_BASE_URL", "http://127.0.0.1:8771")
+
+    try:
+        for _ in range(100):
+            try:
+                if (
+                    httpx.get(
+                        "http://127.0.0.1:8771/ready",
+                        timeout=1,
+                    ).status_code
+                    == 200
+                ):
+                    break
+            except httpx.HTTPError:
+                pass
+            time.sleep(0.1)
+        else:
+            raise AssertionError("Test API not ready")
+
+        app = AppTest.from_file(
+            ROOT / "dashboard/app.py",
+            default_timeout=20,
+        ).run()
+
+        assert not app.exception
+
+        assert not any(
+            button.label == f"Start investigation {alert_id}"
+            for button in app.button
+        )
+
+        assert any(
+            area.label == f"Investigation note {investigation_id}"
+            for area in app.text_area
+        )
+
+        assert any(
+            control.label == f"Disposition {investigation_id}"
+            for control in app.selectbox
+        )
+
+        detail = store.investigation_detail(investigation_id)
+        assert detail["status"] == "IN_PROGRESS"
+        assert detail["alert_id"] == alert_id
     finally:
         process.terminate()
         process.wait(timeout=10)

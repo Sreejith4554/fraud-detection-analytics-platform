@@ -35,6 +35,8 @@ def engine():
     service_engine = connect(URL)
 
     with service_engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS investigation_notes CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS investigations CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS alerts CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS predictions CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS transactions CASCADE"))
@@ -43,6 +45,8 @@ def engine():
     yield service_engine
 
     with service_engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS investigation_notes CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS investigations CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS alerts CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS predictions CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS transactions CASCADE"))
@@ -80,7 +84,7 @@ def test_managed_tables_without_revision_are_rejected(engine):
         current_revision(engine)
 
 
-def test_revision_1_migrates_to_2_and_preserves_alert(engine):
+def test_revision_1_migrates_through_3_and_preserves_alert(engine):
     install(engine)
 
     transaction_id = uuid4()
@@ -123,14 +127,16 @@ def test_revision_1_migrates_to_2_and_preserves_alert(engine):
             )
         )
 
+        conn.execute(text("DROP TABLE investigation_notes"))
+        conn.execute(text("DROP TABLE investigations"))
         conn.execute(text("ALTER TABLE alerts DROP COLUMN resolved_at"))
         conn.execute(text("ALTER TABLE alerts DROP COLUMN updated_at"))
         conn.execute(text("UPDATE schema_revision SET version = 1"))
 
     assert current_revision(engine) == 1
 
-    assert migrate(engine) == 2
-    assert current_revision(engine) == 2
+    assert migrate(engine) == LATEST_SCHEMA_REVISION
+    assert current_revision(engine) == LATEST_SCHEMA_REVISION
 
     columns = {column["name"] for column in inspect(engine).get_columns("alerts")}
     assert {"updated_at", "resolved_at"} <= columns
@@ -154,36 +160,36 @@ def test_revision_1_migrates_to_2_and_preserves_alert(engine):
     assert row.resolved_at is None
 
 
-def test_revision_2_with_missing_required_column_is_rejected(engine):
+def test_latest_revision_with_missing_required_alert_column_is_rejected(engine):
     install(engine)
 
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE alerts DROP COLUMN updated_at"))
 
-    assert current_revision(engine) == 2
+    assert current_revision(engine) == LATEST_SCHEMA_REVISION
 
     with pytest.raises(Exception):
         verify_schema(engine)
 
 
-def test_revision_2_migration_is_idempotent(engine):
+def test_latest_revision_migration_is_idempotent(engine):
     install(engine)
 
-    assert migrate(engine) == 2
-    assert migrate(engine) == 2
-    assert current_revision(engine) == 2
+    assert migrate(engine) == LATEST_SCHEMA_REVISION
+    assert migrate(engine) == LATEST_SCHEMA_REVISION
+    assert current_revision(engine) == LATEST_SCHEMA_REVISION
 
 
 def test_future_revision_is_rejected(engine):
     install(engine)
 
     with engine.begin() as conn:
-        conn.execute(text("UPDATE schema_revision SET version = 3"))
+        conn.execute(text("UPDATE schema_revision SET version = 4"))
 
     with pytest.raises(ValueError, match="newer than supported"):
         migrate(engine)
 
-    assert current_revision(engine) == 3
+    assert current_revision(engine) == 4
 
 
 def test_failed_revision_1_migration_rolls_back_schema_and_revision(engine):
@@ -212,3 +218,70 @@ def test_failed_revision_1_migration_rolls_back_schema_and_revision(engine):
     columns = {column["name"] for column in inspect(engine).get_columns("alerts")}
     assert "updated_at" not in columns
     assert "resolved_at" not in columns
+
+
+def test_revision_2_migrates_to_3_without_inventing_investigations(engine):
+    install(engine)
+
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS investigation_notes CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS investigations CASCADE"))
+        conn.execute(text("UPDATE schema_revision SET version = 2"))
+
+    assert current_revision(engine) == 2
+
+    assert migrate(engine) == LATEST_SCHEMA_REVISION
+    assert current_revision(engine) == LATEST_SCHEMA_REVISION
+
+    inspector = inspect(engine)
+    assert "investigations" in inspector.get_table_names()
+    assert "investigation_notes" in inspector.get_table_names()
+
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT COUNT(*) FROM investigations")) == 0
+        assert conn.scalar(text("SELECT COUNT(*) FROM investigation_notes")) == 0
+
+
+def test_revision_3_requires_investigation_tables(engine):
+    install(engine)
+
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE investigation_notes"))
+
+    with pytest.raises(Exception):
+        verify_schema(engine)
+
+
+def test_revision_3_migration_is_idempotent(engine):
+    install(engine)
+
+    assert migrate(engine) == LATEST_SCHEMA_REVISION
+    assert migrate(engine) == LATEST_SCHEMA_REVISION
+    assert current_revision(engine) == LATEST_SCHEMA_REVISION
+
+
+def test_failed_revision_2_migration_rolls_back_schema_and_revision(engine):
+    install(engine)
+
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE investigation_notes"))
+        conn.execute(text("DROP TABLE investigations"))
+        conn.execute(text("UPDATE schema_revision SET version = 2"))
+
+    def fail_before_revision_advance(
+        conn, cursor, statement, parameters, context, executemany
+    ):
+        if "UPDATE schema_revision SET version = 3" in statement:
+            raise RuntimeError("controlled revision-3 migration failure")
+
+    event.listen(engine, "before_cursor_execute", fail_before_revision_advance)
+    try:
+        with pytest.raises(RuntimeError, match="controlled revision-3 migration failure"):
+            migrate(engine)
+    finally:
+        event.remove(engine, "before_cursor_execute", fail_before_revision_advance)
+
+    assert current_revision(engine) == 2
+    tables = set(inspect(engine).get_table_names())
+    assert "investigations" not in tables
+    assert "investigation_notes" not in tables
