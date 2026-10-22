@@ -2,6 +2,8 @@
 
 import json
 import logging
+import os
+import re
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -78,8 +80,12 @@ def create_app(artifact=None, manifest=None, database_url=None):
     async def observe(request: Request, call_next):
         request_id = str(uuid4())
         started = time.perf_counter()
+        demo_allowed = {"/health", "/ready", "/model-info", "/predictions", "/analytics", "/alerts"}
+        demo_uuid = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+        demo_dynamic = any(re.fullmatch(pattern, request.url.path) for pattern in (rf"/alerts/{demo_uuid}/investigation", rf"/investigations/{demo_uuid}"))
+        demo_blocked = os.getenv("PUBLIC_DEMO_MODE") == "1" and not (request.method == "GET" and (request.url.path in demo_allowed or demo_dynamic))
         try:
-            response = await call_next(request)
+            response = JSONResponse(status_code=403, content={"detail": "Unavailable in public demo"}) if demo_blocked else await call_next(request)
         except Exception:
             response = JSONResponse(status_code=500, content={"detail": "Internal service error"})
         app.state.requests += 1

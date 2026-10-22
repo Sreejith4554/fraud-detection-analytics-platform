@@ -1,0 +1,110 @@
+
+name: fraud-public-demo
+
+x-app: &app
+  image: fraud-public-demo:local
+  build:
+    context: ../..
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  db:
+    image: postgres:16.15-bookworm@sha256:efedf3595f1d6f415c08568ba171029bf54052e754cc9f030e3f2412b21f3d67
+    environment:
+      POSTGRES_DB: fraud_public_demo
+      POSTGRES_USER: fraud_owner
+      POSTGRES_PASSWORD_FILE: /run/secrets/demo_db_password
+    secrets:
+      - demo_db_password
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U fraud_owner -d fraud_public_demo
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *app
+    command:
+      - python
+      - -m
+      - database.migrate
+    environment: &db-env
+      DB_HOST: db
+      DB_NAME: fraud_public_demo
+      DB_USER: fraud_owner
+      DB_PASSWORD_FILE: /run/secrets/demo_db_password
+      PUBLIC_DEMO_DATABASE: "1"
+    secrets:
+      - demo_db_password
+    depends_on:
+      db:
+        condition: service_healthy
+
+  seed:
+    <<: *app
+    profiles:
+      - seed
+    command:
+      - python
+      - /seed/seed_public_demo.py
+    environment:
+      <<: *db-env
+      PYTHONPATH: /app
+    secrets:
+      - demo_db_password
+    volumes:
+      - ../../scripts/seed_public_demo.py:/seed/seed_public_demo.py:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    environment:
+      <<: *db-env
+      PUBLIC_DEMO_MODE: "1"
+    secrets:
+      - demo_db_password
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+
+  dashboard:
+    <<: *app
+    command:
+      - python
+      - -m
+      - streamlit
+      - run
+      - dashboard/app.py
+      - --server.address
+      - 0.0.0.0
+      - --server.port
+      - "8501"
+    environment:
+      API_BASE_URL: http://api:8000
+      PUBLIC_DEMO_MODE: "1"
+    ports:
+      - "127.0.0.1:18501:8501"
+    depends_on:
+      - api
+
+secrets:
+  demo_db_password:
+    file: ../../.secrets/demo_db_password
+
+volumes:
+  db_data:

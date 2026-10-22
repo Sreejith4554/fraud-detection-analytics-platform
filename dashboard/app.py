@@ -10,6 +10,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Fraud Analytics | Delivery Platform", page_icon="◈", layout="wide")
 BASE = os.getenv("API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+PUBLIC_DEMO_MODE = os.getenv("PUBLIC_DEMO_MODE") == "1"
 
 
 def call(path, payload=None, method="GET"):
@@ -64,9 +65,13 @@ st.caption(
     "Flagged share is not the fraud rate. Investigation dispositions are "
     "human review outcomes and are not treated as independent ground truth."
 )
-overview, queue, submit, operations = st.tabs(
-    ["Overview", "Review queue", "Submit demo", "Model & operations"]
-)
+if PUBLIC_DEMO_MODE:
+    overview, queue, operations = st.tabs(['Overview', 'Review queue', 'Model information'])
+    submit = None
+else:
+    overview, queue, submit, operations = st.tabs(
+        ["Overview", "Review queue", "Submit demo", "Model & operations"]
+    )
 with overview:
     left, right = st.columns(2)
     with left:
@@ -129,11 +134,14 @@ with queue:
             )
 
             if alert_status == "OPEN":
-                st.caption(
-                    "Start an investigation to record review notes and a "
-                    "controlled human disposition. Direct resolution remains "
-                    "available for alerts without an active investigation."
-                )
+                if PUBLIC_DEMO_MODE:
+                    st.caption("Read-only synthetic demonstration. Investigation and alert changes are disabled.")
+                else:
+                    st.caption(
+                        "Start an investigation to record review notes and a "
+                        "controlled human disposition. Direct resolution remains "
+                        "available for alerts without an active investigation."
+                    )
 
                 for alert in alerts["items"]:
                     alert_id = alert["id"]
@@ -166,7 +174,7 @@ with queue:
                         continue
 
                     if investigation_id is None:
-                        if st.button(
+                        if not PUBLIC_DEMO_MODE and st.button(
                             f"Start investigation {alert_id}",
                             key=f"start-investigation-{alert_id}",
                         ):
@@ -183,7 +191,7 @@ with queue:
                                     "Refresh and verify the alert state."
                                 )
 
-                        if st.button(
+                        if not PUBLIC_DEMO_MODE and st.button(
                             f"Resolve alert {alert_id}",
                             key=f"resolve-{alert_id}",
                         ):
@@ -225,7 +233,7 @@ with queue:
                         else:
                             st.caption("No investigation notes recorded yet.")
 
-                        if investigation["status"] == "IN_PROGRESS":
+                        if investigation["status"] == "IN_PROGRESS" and not PUBLIC_DEMO_MODE:
                             note_body = st.text_area(
                                 f"Investigation note {investigation_id}",
                                 key=f"note-{investigation_id}",
@@ -281,7 +289,7 @@ with queue:
                                         "Investigation could not be closed. "
                                         "Refresh and verify its current state."
                                     )
-                        else:
+                        elif investigation["status"] != "IN_PROGRESS":
                             st.write(
                                 "Disposition: "
                                 + str(investigation["disposition"])
@@ -291,134 +299,136 @@ with queue:
     except (httpx.HTTPError, ValueError):
         st.error("Alert history unavailable. Refresh after checking the API.")
 
-with submit:
-    st.subheader("Submit a synthetic transaction")
-    st.caption(
-        "These are numerical PCA components, not location or device inputs. Arbitrary values may be out of distribution."
-    )
-    with st.form("demo"):
-        amount = st.number_input("Amount", min_value=0.0, value=12.5)
-        elapsed = st.number_input("Elapsed seconds", min_value=0.0, value=0.0)
-        components = st.text_area("V1–V28 (JSON array)", value=json.dumps([0.0] * 28))
-        sent = st.form_submit_button("Score and save")
-    if sent:
-        st.session_state.pop("last_prediction", None)
-        try:
-            vector = json.loads(components)
-            payload = {
-                "schema_version": "1",
-                "source": "SYNTHETIC",
-                "amount": amount,
-                "time": elapsed,
-                "v": vector,
-            }
-            st.session_state["last_prediction"] = call(
-                "/predict", payload, method="POST"
-            )
-            st.rerun()
-        except (ValueError, httpx.HTTPError):
-            st.error(
-                "Submission failed. Check the 28-number array and service readiness; no success is assumed. If the response was lost, check history before retrying."
-            )
-    if "last_prediction" in st.session_state:
-        result = st.session_state["last_prediction"]
-        st.success("Saved prediction " + result["prediction_id"])
-        st.json(
-            {
-                k: result[k]
-                for k in ["model_score", "risk_category", "decision", "persisted", "alert_id"]
-            }
+if not PUBLIC_DEMO_MODE:
+    with submit:
+        st.subheader("Submit a synthetic transaction")
+        st.caption(
+            "These are numerical PCA components, not location or device inputs. Arbitrary values may be out of distribution."
         )
-    st.divider()
-    st.subheader("Alert-path stress test")
-    st.warning(
-        "Functional demonstration only. This uses an intentionally extreme "
-        "synthetic out-of-distribution vector to exercise the model threshold, "
-        "durable prediction, alert creation, and review-queue path. It is not "
-        "a realistic transaction and is not evidence of real-world fraud."
-    )
-    st.caption(
-        "The model and verified threshold are unchanged. The stress vector "
-        "follows the same deterministic mechanism exercised by the PostgreSQL "
-        "integration tests."
-    )
-
-    stress_vector = [
-        1000.0,
-        1000.0,
-        1000.0,
-        1000.0,
-        1000.0,
-        -1000.0,
-        -1000.0,
-        -1000.0,
-        -1000.0,
-        -1000.0,
-        1000.0,
-        -1000.0,
-        -1000.0,
-        -1000.0,
-        -1000.0,
-        -1000.0,
-        -1000.0,
-        -1000.0,
-        1000.0,
-        -1000.0,
-        1000.0,
-        1000.0,
-        1000.0,
-        -1000.0,
-        1000.0,
-        -1000.0,
-        -1000.0,
-        1000.0,
-    ]
-
-    if st.button("Run synthetic alert-path stress test"):
-        st.session_state.pop("last_stress_prediction", None)
-        try:
-            stress_payload = {
-                "schema_version": "1",
-                "source": "SYNTHETIC",
-                "amount": 12.5,
-                "time": 0.0,
-                "v": stress_vector,
-            }
-            st.session_state["last_stress_prediction"] = call(
-                "/predict", stress_payload, method="POST"
+        with st.form("demo"):
+            amount = st.number_input("Amount", min_value=0.0, value=12.5)
+            elapsed = st.number_input("Elapsed seconds", min_value=0.0, value=0.0)
+            components = st.text_area("V1–V28 (JSON array)", value=json.dumps([0.0] * 28))
+            sent = st.form_submit_button("Score and save")
+        if sent:
+            st.session_state.pop("last_prediction", None)
+            try:
+                vector = json.loads(components)
+                payload = {
+                    "schema_version": "1",
+                    "source": "SYNTHETIC",
+                    "amount": amount,
+                    "time": elapsed,
+                    "v": vector,
+                }
+                st.session_state["last_prediction"] = call(
+                    "/predict", payload, method="POST"
+                )
+                st.rerun()
+            except (ValueError, httpx.HTTPError):
+                st.error(
+                    "Submission failed. Check the 28-number array and service readiness; no success is assumed. If the response was lost, check history before retrying."
+                )
+        if "last_prediction" in st.session_state:
+            result = st.session_state["last_prediction"]
+            st.success("Saved prediction " + result["prediction_id"])
+            st.json(
+                {
+                    k: result[k]
+                    for k in ["model_score", "risk_category", "decision", "persisted", "alert_id"]
+                }
             )
-            st.rerun()
-        except (ValueError, httpx.HTTPError):
-            st.error(
-                "Stress-test submission failed. No success is assumed; "
-                "check prediction history before retrying."
-            )
+        st.divider()
+        st.subheader("Alert-path stress test")
+        st.warning(
+            "Functional demonstration only. This uses an intentionally extreme "
+            "synthetic out-of-distribution vector to exercise the model threshold, "
+            "durable prediction, alert creation, and review-queue path. It is not "
+            "a realistic transaction and is not evidence of real-world fraud."
+        )
+        st.caption(
+            "The model and verified threshold are unchanged. The stress vector "
+            "follows the same deterministic mechanism exercised by the PostgreSQL "
+            "integration tests."
+        )
 
-    if "last_stress_prediction" in st.session_state:
-        stress_result = st.session_state["last_stress_prediction"]
-        st.success(
-            "Synthetic stress-test prediction saved "
-            + stress_result["prediction_id"]
-        )
-        st.json(
-            {
-                k: stress_result[k]
-                for k in [
-                    "model_score",
-                    "risk_category",
-                    "decision",
-                    "persisted",
-                    "alert_id",
-                ]
-            }
-        )
+        stress_vector = [
+            1000.0,
+            1000.0,
+            1000.0,
+            1000.0,
+            1000.0,
+            -1000.0,
+            -1000.0,
+            -1000.0,
+            -1000.0,
+            -1000.0,
+            1000.0,
+            -1000.0,
+            -1000.0,
+            -1000.0,
+            -1000.0,
+            -1000.0,
+            -1000.0,
+            -1000.0,
+            1000.0,
+            -1000.0,
+            1000.0,
+            1000.0,
+            1000.0,
+            -1000.0,
+            1000.0,
+            -1000.0,
+            -1000.0,
+            1000.0,
+        ]
+
+        if st.button("Run synthetic alert-path stress test"):
+            st.session_state.pop("last_stress_prediction", None)
+            try:
+                stress_payload = {
+                    "schema_version": "1",
+                    "source": "SYNTHETIC",
+                    "amount": 12.5,
+                    "time": 0.0,
+                    "v": stress_vector,
+                }
+                st.session_state["last_stress_prediction"] = call(
+                    "/predict", stress_payload, method="POST"
+                )
+                st.rerun()
+            except (ValueError, httpx.HTTPError):
+                st.error(
+                    "Stress-test submission failed. No success is assumed; "
+                    "check prediction history before retrying."
+                )
+
+        if "last_stress_prediction" in st.session_state:
+            stress_result = st.session_state["last_stress_prediction"]
+            st.success(
+                "Synthetic stress-test prediction saved "
+                + stress_result["prediction_id"]
+            )
+            st.json(
+                {
+                    k: stress_result[k]
+                    for k in [
+                        "model_score",
+                        "risk_category",
+                        "decision",
+                        "persisted",
+                        "alert_id",
+                    ]
+                }
+            )
 with operations:
     st.subheader("Model provenance")
     st.json(model)
     st.caption(
         "MBA research extension, implemented with AI assistance. Offline model results and limitations are documented in the repository."
     )
-    try:
-        st.json(call("/metrics"))
-    except (httpx.HTTPError, ValueError):
-        st.info("Operational metrics temporarily unavailable.")
+    if not PUBLIC_DEMO_MODE:
+        try:
+            st.json(call("/metrics"))
+        except (httpx.HTTPError, ValueError):
+            st.info("Operational metrics temporarily unavailable.")
